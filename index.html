@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GAMELINK — Mission-Based Gaming Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- ================= LANDING ================= -->
+<section id="landing">
+  <canvas id="landingCanvas"></canvas>
+  <div class="city back" data-parallax="12"></div>
+  <div class="city front" data-parallax="26"></div>
+  <div class="scan"></div>
+  <div class="landing-inner" data-parallax="-8">
+    <div class="landing-tag">// MISSION-BASED GAMING NETWORK</div>
+    <h1 class="landing-title">GAME<span class="cut">LINK</span></h1>
+    <p class="landing-sub">Don't ask <b>"what do you play?"</b> Ask <b>"what are you trying to accomplish tonight?"</b> Find teammates by intent — rank pushes, boss kills, raid groups, tournament rosters.</p>
+    <div class="enter-wrap">
+      <button class="btn-enter" id="enterBtn"><span class="pulse"></span>ENTER THE ARENA</button>
+    </div>
+    <div class="landing-stats">
+      <div class="st"><b>128<span>,402</span></b>OPERATORS ONLINE</div>
+      <div class="st"><b>3,914</b>MISSIONS LIVE</div>
+      <div class="st"><b>96<span>%</span></b>SQUADS FILLED &lt; 5 MIN</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= APP ================= -->
+<div id="app">
+  <!-- sidebar -->
+  <aside class="side">
+    <div class="logo"><span class="dot"></span>GAME<span class="lk">LINK</span></div>
+    <button class="nav-btn active" data-view="dash">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg>
+      <span class="txt">Command Center</span>
+    </button>
+    <button class="nav-btn" data-view="lfg">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="2.5"/></svg>
+      <span class="txt">LFG Radar</span><span class="badge" id="lfgBadge">6 LIVE</span>
+    </button>
+    <button class="nav-btn" data-view="missions">
+      <svg viewBox="0 0 24 24"><path d="M12 2l2.4 5.3 5.6.6-4.2 3.9 1.2 5.6L12 14.6 7 17.4l1.2-5.6L4 7.9l5.6-.6z"/></svg>
+      <span class="txt">Missions</span>
+    </button>
+    <button class="nav-btn" data-view="discover">
+      <svg viewBox="0 0 24 24"><path d="M17 3l4 4-9 9H8v-4z"/><path d="M8 21H4a1 1 0 01-1-1v-4"/></svg>
+      <span class="txt">Discover</span>
+    </button>
+    <button class="nav-btn" data-view="hubs">
+      <svg viewBox="0 0 24 24"><path d="M6 9h4M8 7v4M15 8h.01M18 10h.01"/><path d="M17.3 5H6.7a4.7 4.7 0 00-4.6 5.6l.8 5A3.7 3.7 0 006.5 19c1 0 2-.4 2.6-1.2l.9-1a2.6 2.6 0 014 0l.9 1c.7.8 1.6 1.2 2.6 1.2a3.7 3.7 0 003.6-3.4l.8-5A4.7 4.7 0 0017.3 5z"/></svg>
+      <span class="txt">Game Hubs</span>
+    </button>
+    <button class="nav-btn" data-view="tours">
+      <svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v6a5 5 0 01-10 0z"/><path d="M7 6H4a1 1 0 00-1 1c0 2.2 1.8 4 4 4M17 6h3a1 1 0 011 1c0 2.2-1.8 4-4 4"/></svg>
+      <span class="txt">Tournaments</span>
+    </button>
+    <button class="nav-btn" data-view="profile">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+      <span class="txt">Gamer Card</span>
+    </button>
+    <div class="spacer"></div>
+    <div class="side-user">
+      <div class="av ring" id="sideAv">R</div>
+      <div><div class="nm" id="sideName">Recruit</div><div class="lv">LVL <span id="sideLvl">1</span> · OPERATOR</div></div>
+    </div>
+  </aside>
+
+  <!-- main -->
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb">GAMELINK // <b id="crumbName">COMMAND CENTER</b></div>
+      <div class="xpwrap">
+        <div class="lbl"><span class="lvl">LVL <span id="lvlNum">1</span></span><span><span id="xpNow">0</span> / <span id="xpNeed">100</span> XP</span></div>
+        <div class="xpbar"><i id="xpFill"></i></div>
+      </div>
+      <button class="mood" id="moodBtn"><span class="md-dot" id="moodDot"></span><span id="moodTxt">Grinding</span></button>
+      <button class="icon-btn" id="soundBtn" title="Toggle sound">
+        <svg id="soundOnIco" viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>
+      </button>
+    </div>
+
+    <!-- ============ DASH ============ -->
+    <section class="view on" id="view-dash">
+      <div class="stack">
+        <div class="panel hero-quest tilt">
+          <div>
+            <div class="eyebrow">TONIGHT'S OBJECTIVE</div>
+            <h2>Welcome back, <span id="heroName">Operator</span>.<br>What are you trying to accomplish?</h2>
+            <p class="sub">Your radar found <b style="color:var(--ink)">3 squads</b> matching your goal, rank window and voice language — two start within 15 minutes.</p>
+            <div style="display:flex;gap:12px;margin-top:20px;flex-wrap:wrap">
+              <button class="btn primary" onclick="go('lfg')">SCAN LFG RADAR</button>
+              <button class="btn ghost" onclick="go('missions')">POST A MISSION</button>
+            </div>
+          </div>
+          <div class="radar-wrap" style="flex:none">
+            <canvas id="radar" width="440" height="440"></canvas>
+          </div>
+        </div>
+
+        <div class="dash-grid">
+          <div class="stack">
+            <div class="panel">
+              <h3>Recommended teammates <span class="cnt">AI-MATCHED · INTENT + RANK + HOURS</span></h3>
+              <div class="grid-3" id="recGrid"></div>
+            </div>
+            <div class="panel">
+              <h3>Daily quests <span class="cnt" id="questCnt"></span></h3>
+              <div class="quest-row" id="questRow"></div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="panel">
+              <h3>Squad online <span class="cnt">LIVE</span></h3>
+              <div id="friendList"></div>
+            </div>
+            <div class="panel">
+              <h3>Tournament radar</h3>
+              <div class="radar-legend" id="tourMini"></div>
+              <button class="btn sm ghost" style="margin-top:14px" onclick="go('tours')">OPEN TOURNAMENT HUB →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ LFG ============ -->
+    <section class="view" id="view-lfg">
+      <div class="view-head">
+        <div>
+          <div class="eyebrow">LIVE POSTS · AUTO-EXPIRING</div>
+          <h2>LFG Radar</h2>
+          <p>Squads forming right now. Posts expire when the lobby starts — no dead listings, no ghost servers.</p>
+        </div>
+        <button class="btn hot" onclick="openPost()">+ BROADCAST LFG</button>
+      </div>
+      <div class="filter-bar" id="lfgFilters"></div>
+      <div id="lfgList"></div>
+    </section>
+
+    <!-- ============ MISSIONS ============ -->
+    <section class="view" id="view-missions">
+      <div class="view-head">
+        <div>
+          <div class="eyebrow">GOAL-BASED MATCHMAKING</div>
+          <h2>Mission Marketplace</h2>
+          <p>Connect around objectives, not just games. Post what you're trying to accomplish and let the right players find you.</p>
+        </div>
+        <button class="btn primary" onclick="openPost()">+ POST MISSION</button>
+      </div>
+      <div class="grid-3" id="missionGrid"></div>
+    </section>
+
+    <!-- ============ DISCOVER ============ -->
+    <section class="view" id="view-discover">
+      <div class="view-head">
+        <div>
+          <div class="eyebrow">COMPATIBILITY ENGINE</div>
+          <h2>Discover Duos</h2>
+          <p>Swipe through operators scored on schedule overlap, comms style, goals and vibe — not just rank. Drag the card or use the controls.</p>
+        </div>
+      </div>
+      <div class="swipe-stage">
+        <div class="deck" id="deck"></div>
+        <div class="swipe-actions">
+          <button class="sw-btn skip" id="btnSkip" title="Skip"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <button class="sw-btn info" title="Full profile" onclick="toast('🔎','Profile expanded','Full stat breakdown coming to this prototype')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></button>
+          <button class="sw-btn invite" id="btnInvite" title="Invite to squad"><svg viewBox="0 0 24 24"><path d="M16 11l2 2 4-4"/><circle cx="9" cy="8" r="4"/><path d="M2 21c0-3.5 3.1-5.5 7-5.5s7 2 7 5.5"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HUBS ============ -->
+    <section class="view" id="view-hubs">
+      <div class="view-head">
+        <div>
+          <div class="eyebrow">EVERY GAME, ITS OWN WORLD</div>
+          <h2>Game Hubs</h2>
+          <p>Each hub carries its own theme, live LFG feed, clans and tournament pipeline. Select a hub to retune the interface.</p>
+        </div>
+      </div>
+      <div class="grid-3" id="hubGrid"></div>
+      <div class="hub-detail" id="hubDetail"></div>
+    </section>
+
+    <!-- ============ TOURNAMENTS ============ -->
+    <section class="view" id="view-tours">
+      <div class="view-head">
+        <div>
+          <div class="eyebrow">RECRUITMENT OPEN</div>
+          <h2>Tournament Hub</h2>
+          <p>Rosters recruiting, scrims scheduling, prize pools live. Register solo and get drafted, or bring your clan.</p>
+        </div>
+      </div>
+      <div id="tourList"></div>
+    </section>
+
+    <!-- ============ PROFILE ============ -->
+    <section class="view" id="view-profile">
+      <div class="view-head">
+        <div>
+          <div class="eyebrow">REPUTATION IS EARNED, NOT CLAIMED</div>
+          <h2>Gamer Card</h2>
+          <p>Endorsements come only from completed sessions — every badge on this card was given by a real teammate.</p>
+        </div>
+        <button class="btn ghost sm" onclick="onboardOpen(true)">EDIT CARD</button>
+      </div>
+      <div class="gamer-card" style="margin-bottom:18px">
+        <div class="gc-in">
+          <div class="gc-head">
+            <div class="av ring" id="gcAv">R</div>
+            <div>
+              <h2 id="gcName">Recruit</h2>
+              <div class="ht" id="gcHandle">@recruit · MUMBAI SERVER · LVL <span id="gcLvl">1</span></div>
+              <div class="rec-tags" style="margin-top:10px" id="gcTags"></div>
+            </div>
+            <div class="compat" style="margin-left:auto">
+              <b id="gcRep">4.9</b><span>REPUTATION</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Endorsements <span class="cnt">FROM 214 SESSIONS</span></h3>
+          <div id="endorseList"></div>
+        </div>
+        <div class="panel">
+          <h3>Achievements <span class="cnt" id="achCnt"></span></h3>
+          <div class="badge-grid" id="achGrid"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ============ ONBOARDING MODAL ============ -->
+<div class="overlay" id="onboardOv">
+  <div class="panel modal">
+    <div class="eyebrow" style="margin-bottom:14px">IDENTITY FORGE</div>
+    <h2>Build your Gamer Card</h2>
+    <p class="m-sub">No boring forms. Pick your identity — everything becomes searchable tags for the matchmaking engine.</p>
+    <div class="steps"><i class="on" id="st1"></i><i id="st2"></i><i id="st3"></i></div>
+
+    <div id="obStep1">
+      <label class="f-label">Callsign</label>
+      <input class="f-input" id="obName" maxlength="16" placeholder="e.g. NightRaven" autocomplete="off">
+      <label class="f-label">Avatar core</label>
+      <div class="av-pick" id="avPick"></div>
+    </div>
+
+    <div id="obStep2" style="display:none">
+      <label class="f-label">Main games</label>
+      <div class="chip-cloud" id="gamePick"></div>
+      <label class="f-label">Voice languages</label>
+      <div class="chip-cloud" id="langPick"></div>
+    </div>
+
+    <div id="obStep3" style="display:none">
+      <label class="f-label">Playstyle DNA</label>
+      <div class="chip-cloud" id="stylePick"></div>
+      <label class="f-label">What are you here to accomplish?</label>
+      <div class="chip-cloud" id="goalPick"></div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn ghost" id="obBack" style="visibility:hidden">← BACK</button>
+      <button class="btn primary" id="obNext">CONTINUE →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SQUAD ROOM MODAL ============ -->
+<div class="overlay" id="roomOv">
+  <div class="panel modal" style="--accent:var(--lime)">
+    <div class="eyebrow" style="--accent:var(--lime);margin-bottom:14px">TEMPORARY SQUAD ROOM</div>
+    <h2 id="roomTitle">Squad Room</h2>
+    <p class="m-sub" id="roomSub">Voice channel armed. Everyone presses READY, then the room hands off to the game lobby.</p>
+    <div class="voice-wave"><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="room-members" id="roomMembers"></div>
+    <div class="countdown" style="justify-content:center;margin-bottom:6px"><span class="cd-dot"></span>LOBBY STARTS IN <span class="mono" id="roomCd">05:00</span></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeRoom()">LEAVE ROOM</button>
+      <button class="btn primary" id="readyBtn" style="border-color:rgba(61,255,160,.5);color:var(--lime)">PRESS READY</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ POST MODAL ============ -->
+<div class="overlay" id="postOv">
+  <div class="panel modal">
+    <div class="eyebrow" style="margin-bottom:14px">BROADCAST</div>
+    <h2>Post a mission</h2>
+    <p class="m-sub">Lead with the goal. Intent-first posts fill 3× faster than "anyone wanna play?"</p>
+    <label class="f-label">Objective</label>
+    <input class="f-input" id="postGoal" placeholder="e.g. Push Immortal — need smokes main, mic required">
+    <label class="f-label">Game</label>
+    <div class="chip-cloud" id="postGame"></div>
+    <label class="f-label">Expires in</label>
+    <div class="chip-cloud" id="postExp"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeOv('postOv')">CANCEL</button>
+      <button class="btn hot" id="postSend">BROADCAST →</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="lvlFlash"><div class="lf" id="lvlTxt">LEVEL UP</div></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
