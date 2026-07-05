@@ -451,6 +451,53 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:.04em}
 .sw-btn.info{color:var(--cyan)}
 .sw-btn.info:hover{border-color:var(--cyan);box-shadow:var(--glow-cyan);transform:scale(1.08)}
 
+/* ============ GAME CAROUSEL ============ */
+.game-carousel{position:relative;margin-bottom:26px;border-radius:var(--r-lg);border:1px solid var(--line);overflow:hidden}
+.gc-viewport{overflow:hidden;border-radius:var(--r-lg)}
+.gc-track{display:flex;transition:transform .6s cubic-bezier(.2,.9,.2,1)}
+.gc-slide{
+  flex:0 0 100%;height:300px;position:relative;display:flex;align-items:flex-end;
+  padding:34px;cursor:pointer;overflow:hidden;
+  background:
+    radial-gradient(120% 140% at 85% -10%, var(--hub-glow,rgba(0,229,255,.3)), transparent 60%),
+    repeating-linear-gradient(115deg, rgba(255,255,255,.025) 0 2px, transparent 2px 26px),
+    linear-gradient(165deg,rgba(16,26,46,.88),rgba(6,9,16,.97));
+}
+.gc-slide::before{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(4,6,12,.8),transparent 58%);pointer-events:none}
+.gc-slide::after{ /* scanline sweep per slide */
+  content:"";position:absolute;left:0;right:0;height:2px;top:0;
+  background:linear-gradient(90deg,transparent,var(--hub,var(--cyan)),transparent);
+  opacity:.45;animation:scanMove 6s linear infinite;pointer-events:none;
+}
+.gc-slide .gc-abbr{
+  position:absolute;top:-34px;right:6px;font-family:var(--font-display);font-weight:700;
+  font-size:190px;color:var(--hub,var(--cyan));opacity:.1;letter-spacing:-.05em;
+  line-height:1;pointer-events:none;
+}
+.gc-slide .gc-info{position:relative;z-index:1}
+.gc-slide .gc-tag{font-family:var(--font-mono);font-size:11px;letter-spacing:.28em;color:var(--hub,var(--cyan));text-transform:uppercase;margin-bottom:8px}
+.gc-slide .gc-name{font-family:var(--font-display);font-weight:700;font-size:34px;margin-bottom:6px;text-shadow:0 0 30px var(--hub-glow,rgba(0,229,255,.3))}
+.gc-slide .gc-stat{font-family:var(--font-mono);font-size:12.5px;color:var(--ink-dim)}
+.gc-slide .gc-stat b{color:var(--hub,var(--cyan))}
+.gc-slide .gc-enter{margin-top:16px}
+.gc-arrow{
+  position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;
+  background:rgba(6,9,16,.55);border:1px solid var(--line);color:var(--ink);font-size:22px;
+  display:flex;align-items:center;justify-content:center;line-height:1;
+  backdrop-filter:blur(6px);transition:all .15s;z-index:2;
+}
+.gc-arrow:hover{border-color:var(--line-hot);color:var(--cyan);background:rgba(6,9,16,.85)}
+.gc-arrow.prev{left:14px}
+.gc-arrow.next{right:14px}
+.gc-dots{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:2}
+.gc-dots i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.28);transition:all .2s;cursor:pointer;display:block}
+.gc-dots i.on{background:var(--cyan);box-shadow:0 0 8px var(--cyan);width:20px;border-radius:4px}
+@media (max-width:920px){
+  .gc-slide{height:220px;padding:20px}
+  .gc-slide .gc-name{font-size:24px}
+  .gc-slide .gc-abbr{font-size:110px;top:-14px}
+}
+
 /* ============ GAME HUBS ============ */
 .hub-card{
   position:relative;height:160px;border-radius:var(--r-md);border:1px solid var(--line);

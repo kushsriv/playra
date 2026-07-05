@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GAMELINK — Mission-Based Gaming Network</title>
+<meta name="theme-color" content="#00E5FF">
+<meta name="description" content="Mission-based gaming network — find teammates by intent, not just game title.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
@@ -183,6 +188,12 @@
           <h2>Game Hubs</h2>
           <p>Each hub carries its own theme, live LFG feed, clans and tournament pipeline. Select a hub to retune the interface.</p>
         </div>
+      </div>
+      <div class="game-carousel" id="gameCarousel">
+        <div class="gc-viewport"><div class="gc-track" id="gcTrack"></div></div>
+        <button class="gc-arrow prev" id="gcPrev" aria-label="Previous game">‹</button>
+        <button class="gc-arrow next" id="gcNext" aria-label="Next game">›</button>
+        <div class="gc-dots" id="gcDots"></div>
       </div>
       <div class="grid-3" id="hubGrid"></div>
       <div class="hub-detail" id="hubDetail"></div>

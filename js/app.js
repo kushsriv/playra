@@ -27,9 +27,36 @@ document.addEventListener('click', e=>{ if(e.target.closest('button,.chip')) Sfx
 /* ================= STATE ================= */
 const S = {
   name:'Recruit', avatar:'⚡', games:['Valorant'], langs:['English'], styles:['Competitive','IGL'],
-  goals:['Rank Push'], level:1, xp:0, xpNeed:100, quests:{}, achievements:new Set(['first'])
+  goals:['Rank Push'], level:1, xp:0, xpNeed:100, quests:{}, achievements:new Set(['first']), onboarded:false
 };
 const XP_EVENTS = { join:40, ready:25, invite:20, quest:0, post:30, register:35, hub:10 };
+
+/* ================= PERSISTENCE ================= */
+const STORAGE_KEY = 'playra_state_v1';
+function saveState(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      name:S.name, avatar:S.avatar, games:S.games, langs:S.langs, styles:S.styles, goals:S.goals,
+      level:S.level, xp:S.xp, xpNeed:S.xpNeed, quests:S.quests, achievements:[...S.achievements],
+      onboarded:S.onboarded, moodIdx: typeof moodIdx==='number'?moodIdx:0
+    }));
+  }catch(e){}
+}
+function loadState(){
+  let raw;
+  try{ raw = localStorage.getItem(STORAGE_KEY); }catch(e){ return false; }
+  if(!raw) return false;
+  try{
+    const d = JSON.parse(raw);
+    Object.assign(S, {
+      name:d.name, avatar:d.avatar, games:d.games, langs:d.langs, styles:d.styles, goals:d.goals,
+      level:d.level, xp:d.xp, xpNeed:d.xpNeed, quests:d.quests||{}, onboarded:!!d.onboarded
+    });
+    S.achievements = new Set(d.achievements && d.achievements.length ? d.achievements : ['first']);
+    if(typeof d.moodIdx==='number') moodIdx = d.moodIdx;
+    return true;
+  }catch(e){ return false; }
+}
 
 /* ================= DATA ================= */
 const GAMES = [
@@ -108,6 +135,7 @@ const ENDORSE = [['Communication',96],['Clutch',88],['Leadership',82],['Patient'
 const $ = id => document.getElementById(id);
 const el = (h) => { const t=document.createElement('template'); t.innerHTML=h.trim(); return t.content.firstChild; };
 const tagHtml = t => `<span class="tag ${t[0]}">${t[1]}</span>`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(ico, title, desc, cls=''){
   const t = el(`<div class="toast ${cls}"><div class="t-ico">${ico}</div><div><div class="t-t">${title}</div><div class="t-d">${desc}</div></div></div>`);
   $('toasts').appendChild(t); Sfx.ping();
@@ -118,7 +146,7 @@ function addXP(n, why){
   while(S.xp >= S.xpNeed){ S.xp -= S.xpNeed; S.level++; S.xpNeed = Math.round(S.xpNeed*1.35);
     $('lvlTxt').textContent = `LEVEL ${S.level}`; const f=$('lvlFlash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); Sfx.lvl();
   }
-  renderXP();
+  renderXP(); saveState();
 }
 function renderXP(){
   $('xpFill').style.width = Math.min(100, S.xp/S.xpNeed*100)+'%';
@@ -127,7 +155,7 @@ function renderXP(){
 }
 function unlockAch(id, nm){
   if(S.achievements.has(id)) return; S.achievements.add(id);
-  toast('🏅','Achievement unlocked', nm.toUpperCase(),'ach-t'); renderAch();
+  toast('🏅','Achievement unlocked', nm.toUpperCase(),'ach-t'); renderAch(); saveState();
 }
 
 /* ================= NAV ================= */
@@ -316,6 +344,43 @@ function renderMissions(){
   });
 }
 
+/* ================= GAME CAROUSEL ================= */
+let gcIdx=0, gcTimer=null;
+const gcReduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function renderCarousel(){
+  const track=$('gcTrack'); track.innerHTML='';
+  GAMES.forEach(g=>{
+    const s=el(`<div class="gc-slide" style="--hub:${g.c};--hub-glow:${g.glow}">
+      <div class="gc-abbr">${g.ab}</div>
+      <div class="gc-info">
+        <div class="gc-tag">${g.tag}</div>
+        <div class="gc-name">${g.n}</div>
+        <div class="gc-stat"><b>${g.online}</b> PLAYERS ONLINE NOW</div>
+        <button class="btn sm primary gc-enter">ENTER HUB →</button>
+      </div></div>`);
+    s.querySelector('.gc-enter').onclick=e=>{ e.stopPropagation(); selectHub(g); };
+    s.onclick=()=>selectHub(g);
+    track.appendChild(s);
+  });
+  $('gcDots').innerHTML='';
+  GAMES.forEach((g,i)=>{
+    const d=el(`<i class="${i===gcIdx?'on':''}"></i>`);
+    d.onclick=()=>gcGoto(i);
+    $('gcDots').appendChild(d);
+  });
+  gcUpdate();
+}
+function gcUpdate(){
+  $('gcTrack').style.transform=`translateX(-${gcIdx*100}%)`;
+  $('gcDots').querySelectorAll('i').forEach((d,i)=>d.classList.toggle('on',i===gcIdx));
+}
+function gcGoto(i){ gcIdx=(i+GAMES.length)%GAMES.length; gcUpdate(); gcRestart(); }
+function gcRestart(){ clearInterval(gcTimer); if(!gcReduce) gcTimer=setInterval(()=>gcGoto(gcIdx+1),4500); }
+$('gcNext').onclick=()=>gcGoto(gcIdx+1);
+$('gcPrev').onclick=()=>gcGoto(gcIdx-1);
+$('gameCarousel').addEventListener('mouseenter',()=>clearInterval(gcTimer));
+$('gameCarousel').addEventListener('mouseleave',gcRestart);
+
 /* ================= HUBS ================= */
 function renderHubs(){
   $('hubGrid').innerHTML='';
@@ -366,7 +431,7 @@ function renderTours(){
 function renderProfile(){
   $('gcName').textContent=S.name; $('heroName').textContent=S.name;
   $('sideName').textContent=S.name; 
-  $('gcHandle').innerHTML=`@${S.name.toLowerCase().replace(/\s/g,'')} · MUMBAI SERVER · LVL <span id="gcLvl">${S.level}</span>`;
+  $('gcHandle').innerHTML=`@${esc(S.name.toLowerCase().replace(/\s/g,''))} · MUMBAI SERVER · LVL <span id="gcLvl">${S.level}</span>`;
   ['sideAv','gcAv'].forEach(id=>$(id).textContent=S.avatar);
   $('gcTags').innerHTML = [...S.games.map(g=>['cy',g.toUpperCase()]),...S.styles.map(s=>['mg',s.toUpperCase()]),...S.langs.map(l=>['am',l.toUpperCase()]),...S.goals.map(g=>['lm',g.toUpperCase()])].map(tagHtml).join('');
   $('endorseList').innerHTML = ENDORSE.map(e=>`<div class="endorse"><span class="e-nm">${e[0]}</span><span class="e-bar"><i style="width:${e[1]}%"></i></span><span class="e-ct">${e[1]}</span></div>`).join('');
@@ -470,7 +535,7 @@ $('postSend').onclick=()=>{
   const goal=$('postGoal').value.trim();
   if(!goal){ toast('⚠️','Objective required','LEAD WITH THE GOAL — IT FILLS 3× FASTER'); return; }
   const mins = {'15 min':15,'30 min':30,'1 hr':60,'3 hr':180}[postExpSel];
-  LFG.unshift({game:postGameSel,title:goal,tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins});
+  LFG.unshift({game:postGameSel,title:esc(goal),tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins});
   $('postGoal').value=''; closeOv('postOv');
   renderLfgFilters(); renderLfg(); go('lfg');
   addXP(XP_EVENTS.post,'Broadcast LFG'); $('lfgBadge').textContent=LFG.length+' LIVE';
@@ -521,9 +586,11 @@ $('obBack').onclick=()=>{ OB.step--; obShow(); };
 $('obNext').onclick=()=>{
   if(OB.step===1){ const n=$('obName').value.trim(); if(n) S.name=n; }
   if(OB.step<3){ OB.step++; obShow(); return; }
+  S.onboarded = true;
   closeOv('onboardOv'); renderProfile(); renderRecs();
   toast('🪪','Gamer Card deployed',`WELCOME, ${S.name.toUpperCase()} — MATCHMAKING ENGINE CALIBRATED`);
   unlockAch('first','First Link');
+  saveState();
 };
 
 /* ================= MOOD ================= */
@@ -535,6 +602,7 @@ $('moodBtn').onclick=()=>{
   $('moodDot').style.background=MOODS[moodIdx][1];
   $('moodDot').style.boxShadow=`0 0 10px ${MOODS[moodIdx][1]}`;
   toast('🎭','Mood updated',`STATUS: ${MOODS[moodIdx][0].toUpperCase()} — MATCHES RETUNED`);
+  saveState();
 };
 
 /* ================= SOUND TOGGLE ================= */
@@ -546,7 +614,11 @@ $('enterBtn').onclick=()=>{
   Sfx.launch();
   $('landing').classList.add('gone');
   $('app').classList.add('on');
-  setTimeout(()=>onboardOpen(false), 700);
+  if(S.onboarded){
+    setTimeout(()=>toast('👋','Welcome back',`${S.name.toUpperCase()} — LEVEL ${S.level} — MATCHMAKING RESUMED`), 500);
+  } else {
+    setTimeout(()=>onboardOpen(false), 700);
+  }
 };
 
 /* ================= AMBIENT SIM ================= */
@@ -558,5 +630,14 @@ setInterval(()=>{
 }, 45000);
 
 /* ================= INIT ================= */
+loadState();
 renderXP(); renderRecs(); renderFriends(); renderQuests(); renderTourMini();
-renderLfgFilters(); renderLfg(); renderMissions(); renderHubs(); renderTours(); renderProfile(); renderDeck();
+renderLfgFilters(); renderLfg(); renderMissions(); renderHubs(); renderCarousel(); renderTours(); renderProfile(); renderDeck();
+gcRestart();
+$('moodTxt').textContent=MOODS[moodIdx][0];
+$('moodDot').style.background=MOODS[moodIdx][1];
+$('moodDot').style.boxShadow=`0 0 10px ${MOODS[moodIdx][1]}`;
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
