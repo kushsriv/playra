@@ -41,6 +41,10 @@ function saveState(){
       onboarded:S.onboarded, moodIdx: typeof moodIdx==='number'?moodIdx:0
     }));
   }catch(e){}
+  if(Backend.enabled && Backend.currentUser()){
+    S.moodIdx = typeof moodIdx==='number'?moodIdx:0;
+    Backend.saveProfile(S);
+  }
 }
 function loadState(){
   let raw;
@@ -302,8 +306,8 @@ function renderLfg(){
     const g=gameBy(p.game);
     const card=el(`<div class="panel lfg-card" style="--accent:${g.c}">
       <div class="game-ico" style="color:${g.c};background:${g.glow};border-color:${g.c}55">${g.ab}</div>
-      <div><div class="lfg-title">${p.title}</div>
-        <div class="lfg-meta"><span class="tag" style="color:${g.c};border-color:${g.c}55">${p.game.toUpperCase()}</span>${p.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div></div>
+      <div><div class="lfg-title">${esc(p.title)}${p.live?' <span class=\"tag lm\" style=\"margin-left:6px\">LIVE</span>':''}</div>
+        <div class="lfg-meta"><span class="tag" style="color:${g.c};border-color:${g.c}55">${p.game.toUpperCase()}</span>${p.author?`<span class="tag">BY ${esc(p.author.toUpperCase())}</span>`:''}${p.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div></div>
       <div class="lfg-right">
         <div class="countdown" data-mins="${p.mins}"><span class="cd-dot"></span><span class="cd-txt mono">--:--</span></div>
         <div class="slots">${Array.from({length:p.slots},(_,k)=>`<i class="${k<p.filled?'fill':''}"></i>`).join('')}</div>
@@ -531,14 +535,25 @@ function openPost(){
   });
   openOv('postOv');
 }
-$('postSend').onclick=()=>{
+const seenLfgIds = new Set();
+function addLfgPost(post){
+  if(post.id){ if(seenLfgIds.has(post.id)) return; seenLfgIds.add(post.id); }
+  LFG.unshift(post);
+  renderLfgFilters(); renderLfg();
+  $('lfgBadge').textContent = LFG.length+' LIVE';
+}
+$('postSend').onclick=async ()=>{
   const goal=$('postGoal').value.trim();
   if(!goal){ toast('⚠️','Objective required','LEAD WITH THE GOAL — IT FILLS 3× FASTER'); return; }
   const mins = {'15 min':15,'30 min':30,'1 hr':60,'3 hr':180}[postExpSel];
-  LFG.unshift({game:postGameSel,title:esc(goal),tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins});
-  $('postGoal').value=''; closeOv('postOv');
-  renderLfgFilters(); renderLfg(); go('lfg');
-  addXP(XP_EVENTS.post,'Broadcast LFG'); $('lfgBadge').textContent=LFG.length+' LIVE';
+  $('postGoal').value=''; closeOv('postOv'); go('lfg');
+  if(Backend.enabled && Backend.currentUser()){
+    const saved = await Backend.insertLfgPost({game:postGameSel,title:goal,tags:['Mic required',postExpSel+' window'],slots:5,filled:1,mins,authorName:S.name});
+    if(saved){ addLfgPost(saved); addXP(XP_EVENTS.post,'Broadcast LFG'); return; }
+    toast('⚠️','Broadcast failed','COULD NOT REACH THE SERVER — POSTED LOCALLY INSTEAD');
+  }
+  addLfgPost({game:postGameSel,title:goal,tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins});
+  addXP(XP_EVENTS.post,'Broadcast LFG');
 };
 
 /* ================= OVERLAYS ================= */
@@ -621,6 +636,20 @@ $('enterBtn').onclick=()=>{
   }
 };
 
+/* ================= AUTH / BACKEND ================= */
+$('discordBtn').onclick=()=>Backend.signInWithDiscord();
+$('signOutBtn').onclick=async ()=>{
+  await Backend.signOut();
+  try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+  location.reload();
+};
+function applyProfileRow(row){
+  S.name=row.name; S.avatar=row.avatar; S.games=row.games||[]; S.langs=row.langs||[];
+  S.styles=row.styles||[]; S.goals=row.goals||[]; S.level=row.level; S.xp=row.xp; S.xpNeed=row.xp_need;
+  S.quests=row.quests||{}; S.achievements=new Set(row.achievements&&row.achievements.length?row.achievements:['first']);
+  S.onboarded=!!row.onboarded; moodIdx = row.mood_idx||0;
+}
+
 /* ================= AMBIENT SIM ================= */
 setInterval(()=>{
   if(!$('app').classList.contains('on')) return;
@@ -630,13 +659,41 @@ setInterval(()=>{
 }, 45000);
 
 /* ================= INIT ================= */
-loadState();
-renderXP(); renderRecs(); renderFriends(); renderQuests(); renderTourMini();
-renderLfgFilters(); renderLfg(); renderMissions(); renderHubs(); renderCarousel(); renderTours(); renderProfile(); renderDeck();
-gcRestart();
-$('moodTxt').textContent=MOODS[moodIdx][0];
-$('moodDot').style.background=MOODS[moodIdx][1];
-$('moodDot').style.boxShadow=`0 0 10px ${MOODS[moodIdx][1]}`;
+async function initApp(){
+  loadState();
+
+  if(Backend.enabled){
+    await Backend.init();
+    const user = Backend.currentUser();
+    if(user){
+      const row = await Backend.loadProfile(user.id);
+      if(row) applyProfileRow(row);
+      else S.name = user.user_metadata?.full_name || user.user_metadata?.name || S.name;
+      $('signOutBtn').style.display='inline-block';
+    } else {
+      $('discordBtn').style.display='inline-flex';
+      $('enterBtn').classList.add('btn-guest-alt');
+      $('enterBtn').textContent='CONTINUE AS GUEST';
+    }
+    Backend.fetchLfgPosts().then(posts=>{ posts.reverse().forEach(addLfgPost); });
+    Backend.subscribeLfgInserts(post=>{
+      addLfgPost(post);
+      if(post.author && post.author!==S.name) toast('📡','New LFG match',`${post.game.toUpperCase()} — ${post.title.toUpperCase()}`);
+    });
+    Backend.joinPresence(S.name, count=>{
+      $('presenceBadge').style.display='inline-flex';
+      $('presenceCount').textContent = count;
+    });
+  }
+
+  renderXP(); renderRecs(); renderFriends(); renderQuests(); renderTourMini();
+  renderLfgFilters(); renderLfg(); renderMissions(); renderHubs(); renderCarousel(); renderTours(); renderProfile(); renderDeck();
+  gcRestart();
+  $('moodTxt').textContent=MOODS[moodIdx][0];
+  $('moodDot').style.background=MOODS[moodIdx][1];
+  $('moodDot').style.boxShadow=`0 0 10px ${MOODS[moodIdx][1]}`;
+}
+initApp();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });

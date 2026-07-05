@@ -110,7 +110,7 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:.04em}
   animation:fadeUp 1.2s .8s both;
 }
 .landing-sub b{color:var(--ink)}
-.enter-wrap{margin-top:46px;animation:fadeUp 1.2s 1.05s both}
+.enter-wrap{margin-top:46px;animation:fadeUp 1.2s 1.05s both;display:flex;flex-direction:column;align-items:center}
 .btn-enter{
   position:relative;font-family:var(--font-display);font-weight:700;font-size:17px;
   letter-spacing:.22em;text-transform:uppercase;color:var(--void);
@@ -126,6 +126,12 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:.04em}
   clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
   animation:pulseRing 2.2s ease-out infinite;pointer-events:none;
 }
+.btn-enter.btn-guest-alt{
+  display:block;margin:16px auto 0;background:transparent;color:var(--ink-dim);
+  padding:10px 26px;font-size:12.5px;box-shadow:none;border:1px solid var(--line);
+}
+.btn-enter.btn-guest-alt:hover{color:var(--ink);border-color:var(--line-hot);transform:none;filter:none}
+.btn-enter.btn-guest-alt .pulse{display:none}
 .landing-stats{
   margin-top:56px;display:flex;gap:44px;justify-content:center;flex-wrap:wrap;
   animation:fadeUp 1.2s 1.25s both;
@@ -226,6 +232,11 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:.04em}
 .icon-btn:hover{color:var(--cyan);border-color:var(--line-hot)}
 .icon-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .icon-btn.muted{color:var(--ink-mute)}
+.live-badge{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
+  border:1px solid rgba(61,255,160,.35);background:rgba(61,255,160,.08);
+  font-family:var(--font-mono);font-size:11px;color:var(--lime);letter-spacing:.08em;
+}
 
 /* views */
 .view{display:none;padding:30px 28px 10px;max-width:1240px}

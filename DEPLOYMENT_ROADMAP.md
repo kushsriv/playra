@@ -25,6 +25,21 @@ The repo is a complete, self-contained front-end prototype — ~1,500 lines tota
 
 **Everything is simulated.** All data (`GAMES`, `LFG`, `MISSIONS`, `RECS`, `SWIPES`, `TOURS`, `FRIENDS`) is hardcoded in `js/app.js`; state lives in a single in-memory object `S` and vanishes on refresh. There is no backend, auth, persistence, or networking of any kind.
 
+**Update — Tier 0 and part of Tier 1 are now built:**
+
+| Area | Status | Where |
+|---|---|---|
+| `localStorage` persistence (profile/XP/quests/achievements survive refresh) | ✅ Done | `saveState()/loadState()`, `js/app.js` |
+| XSS hardening (escape at render time, not just at input) | ✅ Done | `esc()` used in `renderLfg`, `renderProfile` |
+| PWA (manifest, icon, offline app-shell service worker) | ✅ Done | `manifest.json`, `icon.svg`, `sw.js` |
+| Game background carousel on Game Hubs (autoplay, arrows, dots) | ✅ Done | `renderCarousel()`, `.game-carousel` in `css/styles.css` |
+| Discord OAuth login (via Supabase Auth), guest mode preserved as fallback | ✅ Built, needs your credentials | `js/backend.js`, landing `#discordBtn` |
+| Real LFG posts (Postgres-backed, RLS, live via Realtime) | ✅ Built, needs your credentials | `supabase/schema.sql`, `Backend.insertLfgPost/fetchLfgPosts/subscribeLfgInserts` |
+| Presence badge ("🟢 N LIVE") | ✅ Built, needs your credentials | `Backend.joinPresence`, `#presenceBadge` |
+| Profile persisted server-side instead of just this browser | ✅ Built, needs your credentials | `Backend.saveProfile/loadProfile` |
+
+The backend integration is code-complete and was verified against a mocked Supabase client (auth, profile CRUD, LFG insert/fetch/realtime, presence — all exercised end-to-end in that mock). It has **not** been run against a real Supabase project or Discord app, since those require your own accounts — see `SETUP.md` for the exact steps to provision them and the manual checklist to run once you have real credentials. Until `js/config.js` is filled in, the app is functionally identical to the original static prototype.
+
 ---
 
 ## 2. Gaps to "deployable"
