@@ -138,10 +138,15 @@ const ENDORSE = [['Communication',96],['Clutch',88],['Leadership',82],['Patient'
 /* ================= HELPERS ================= */
 const $ = id => document.getElementById(id);
 const el = (h) => { const t=document.createElement('template'); t.innerHTML=h.trim(); return t.content.firstChild; };
-const tagHtml = t => `<span class="tag ${t[0]}">${t[1]}</span>`;
+const tagHtml = t => `<span class="tag ${t[0]}">${esc(t[1])}</span>`;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* Minimal client-side moderation. Not a substitute for a real moderation
+   pipeline (see DEPLOYMENT_ROADMAP.md re: Perspective API) — this just
+   stops the obvious stuff before it ever reaches the database. */
+const BLOCKLIST = ['fuck','shit','bitch','nigger','faggot','cunt','asshole','whore','slut','retard','rape'];
+const hasBlockedWord = text => { const low=String(text).toLowerCase(); return BLOCKLIST.some(w=>low.includes(w)); };
 function toast(ico, title, desc, cls=''){
-  const t = el(`<div class="toast ${cls}"><div class="t-ico">${ico}</div><div><div class="t-t">${title}</div><div class="t-d">${desc}</div></div></div>`);
+  const t = el(`<div class="toast ${cls}"><div class="t-ico">${ico}</div><div><div class="t-t">${esc(title)}</div><div class="t-d">${esc(desc)}</div></div></div>`);
   $('toasts').appendChild(t); Sfx.ping();
   setTimeout(()=>{ t.classList.add('out'); setTimeout(()=>t.remove(),350); }, 4200);
 }
@@ -243,17 +248,50 @@ document.addEventListener('mousemove', e=>{
   c.style.transform=`perspective(900px) rotateY(${x*4}deg) rotateX(${-y*4}deg)`;
 });
 
+/* ================= REAL MATCHMAKING ================= */
+let REAL_PROFILES = [];
+const jac = (x,y) => { x=x||[]; y=y||[]; if(!x.length||!y.length) return 0; const sy=new Set(y); const inter=x.filter(v=>sy.has(v)).length; return inter/new Set([...x,...y]).size; };
+function computeCompat(mine, other){
+  const score = jac(mine.games,other.games)*0.4 + jac(mine.goals,other.goals)*0.3 + jac(mine.langs,other.langs)*0.15 + jac(mine.styles,other.styles)*0.15;
+  return Math.max(38, Math.round(score*100));
+}
+function profileToSwipeCard(p){
+  return {
+    n:p.name||'Operator', h:'@'+(p.name||'operator').toLowerCase().replace(/\s/g,''),
+    compat:computeCompat(S,p), glow:'rgba(0,229,255,.2)',
+    bars:[['GAME OVERLAP',Math.round(jac(S.games,p.games)*100)],['COMMS STYLE',Math.round(jac(S.langs,p.langs)*100)],
+          ['GOAL ALIGNMENT',Math.round(jac(S.goals,p.goals)*100)],['VIBE',Math.round(jac(S.styles,p.styles)*100)]],
+    tags:[...(p.games||[]).slice(0,2).map(g=>['cy',g.toUpperCase()]),...(p.styles||[]).slice(0,1).map(s=>['mg',s.toUpperCase()]),...(p.langs||[]).slice(0,1).map(l=>['am',l.toUpperCase()])],
+    id:p.id
+  };
+}
+
 /* ================= RENDER: DASHBOARD ================= */
 function renderRecs(){
   $('recGrid').innerHTML='';
-  RECS.forEach(r=>{
-    $('recGrid').appendChild(el(`<div class="rec-card">
-      <div class="rec-top"><div class="av">${r.n[0]}</div>
-        <div><div class="rn">${r.n}</div><div class="rr">${r.rank}</div></div>
+  const real = REAL_PROFILES.map(p=>({
+    n:p.name||'Operator', rank:((p.games&&p.games[0])||'Operator')+' · LVL '+(p.level||1),
+    compat:computeCompat(S,p), id:p.id,
+    tags:[...(p.games||[]).slice(0,1).map(g=>['cy',g.toUpperCase()]),...(p.styles||[]).slice(0,1).map(s=>['mg',s.toUpperCase()]),...(p.langs||[]).slice(0,1).map(l=>['am',l.toUpperCase()])]
+  })).sort((a,b)=>b.compat-a.compat).slice(0,3);
+  const list = real.length ? real : RECS;
+  list.forEach(r=>{
+    const card = el(`<div class="rec-card">
+      <div class="rec-top"><div class="av"></div>
+        <div><div class="rn"></div><div class="rr"></div></div>
         <div class="compat"><b>${r.compat}%</b><span>MATCH</span></div></div>
       <div class="rec-tags">${r.tags.map(tagHtml).join('')}</div>
-      <button class="btn sm primary" onclick="inviteRec('${r.n}')">INVITE TO SQUAD</button>
-    </div>`));
+      <div style="display:flex;gap:8px">
+        <button class="btn sm primary invite-btn" style="flex:1">INVITE TO SQUAD</button>
+        <button class="btn sm ghost endorse-btn" style="${r.id?'':'display:none'}">ENDORSE</button>
+      </div>
+    </div>`);
+    card.querySelector('.av').textContent = (r.n[0]||'?').toUpperCase();
+    card.querySelector('.rn').textContent = r.n;
+    card.querySelector('.rr').textContent = r.rank;
+    card.querySelector('.invite-btn').onclick=()=>inviteRec(r.n);
+    if(r.id) card.querySelector('.endorse-btn').onclick=()=>openEndorsePicker(r.id, r.n);
+    $('recGrid').appendChild(card);
   });
 }
 function inviteRec(n){ addXP(XP_EVENTS.invite, `Invited ${n}`); completeQuest('q4'); }
@@ -434,12 +472,35 @@ function renderTours(){
 /* ================= PROFILE ================= */
 function renderProfile(){
   $('gcName').textContent=S.name; $('heroName').textContent=S.name;
-  $('sideName').textContent=S.name; 
+  $('sideName').textContent=S.name;
   $('gcHandle').innerHTML=`@${esc(S.name.toLowerCase().replace(/\s/g,''))} · MUMBAI SERVER · LVL <span id="gcLvl">${S.level}</span>`;
   ['sideAv','gcAv'].forEach(id=>$(id).textContent=S.avatar);
   $('gcTags').innerHTML = [...S.games.map(g=>['cy',g.toUpperCase()]),...S.styles.map(s=>['mg',s.toUpperCase()]),...S.langs.map(l=>['am',l.toUpperCase()]),...S.goals.map(g=>['lm',g.toUpperCase()])].map(tagHtml).join('');
-  $('endorseList').innerHTML = ENDORSE.map(e=>`<div class="endorse"><span class="e-nm">${e[0]}</span><span class="e-bar"><i style="width:${e[1]}%"></i></span><span class="e-ct">${e[1]}</span></div>`).join('');
+  $('endorseList').innerHTML = ENDORSE.map(e=>`<div class="endorse"><span class="e-nm">${esc(e[0])}</span><span class="e-bar"><i style="width:${e[1]}%"></i></span><span class="e-ct">${e[1]}</span></div>`).join('');
   renderAch();
+  if(Backend.enabled && Backend.currentUser()){
+    Backend.fetchEndorsementCounts(Backend.currentUser().id).then(counts=>{
+      const entries = Object.entries(counts);
+      if(!entries.length) return;
+      const max = Math.max(...entries.map(e=>e[1]));
+      $('endorseList').innerHTML = entries.sort((a,b)=>b[1]-a[1])
+        .map(([trait,count])=>`<div class="endorse"><span class="e-nm">${esc(trait)}</span><span class="e-bar"><i style="width:${Math.round(count/max*100)}%"></i></span><span class="e-ct">${count}</span></div>`).join('');
+    });
+  }
+}
+function openEndorsePicker(targetId, targetName){
+  $('endorseTarget').textContent = targetName;
+  $('endorseTraits').innerHTML='';
+  ENDORSE.forEach(([trait])=>{
+    const c=el(`<button class="chip">${esc(trait)}</button>`);
+    c.onclick=async ()=>{
+      const ok = await Backend.insertEndorsement(targetId, trait);
+      if(ok){ toast('🤝','Endorsement sent',`${trait.toUpperCase()} — GIVEN TO ${targetName.toUpperCase()}`); closeOv('endorseOv'); }
+      else toast('⚠️','Could not send','TRY AGAIN IN A MOMENT');
+    };
+    $('endorseTraits').appendChild(c);
+  });
+  openOv('endorseOv');
 }
 function renderAch(){
   $('achGrid').innerHTML='';
@@ -452,16 +513,17 @@ function renderAch(){
 
 /* ================= SWIPE DECK ================= */
 let deckIdx=0;
+let DECK = SWIPES;
 function renderDeck(){
   const d=$('deck'); d.innerHTML='';
-  const rest = SWIPES.slice(deckIdx, deckIdx+3);
+  const rest = DECK.slice(deckIdx, deckIdx+3);
   if(!rest.length){ d.appendChild(el(`<div class="empty" style="height:100%;display:flex;flex-direction:column;justify-content:center"><div class="e-ico">🛰️</div><b>Radar swept clean</b>New compatible operators surface every few minutes.<br><br><button class="btn sm primary" onclick="deckIdx=0;renderDeck()">RESCAN</button></div>`)); return; }
   rest.reverse().forEach((p,i)=>{
     const pos = rest.length-1-i; // 0 = top
     const card=el(`<div class="swipe-card ${pos===1?'behind':pos===2?'behind2':''}" style="--sc-glow:${p.glow}">
       <div class="sc-bg"></div>
       <div class="stamp invite">INVITE</div><div class="stamp skip">SKIP</div>
-      <div class="sc-head"><div class="av ring">${p.n[0]}</div><div><div class="nm">${p.n}</div><div class="hn">${p.h}</div></div></div>
+      <div class="sc-head"><div class="av ring">${esc((p.n[0]||'?').toUpperCase())}</div><div><div class="nm">${esc(p.n)}</div><div class="hn">${esc(p.h)}</div></div></div>
       <div class="sc-compat"><b>${p.compat}%</b><span>SQUAD COMPATIBILITY</span></div>
       <div class="sc-bars">${p.bars.map(b=>`<div class="sc-bar"><div class="lb"><span>${b[0]}</span><span>${b[1]}</span></div><div class="tr"><i style="width:${b[1]}%"></i></div></div>`).join('')}</div>
       <div class="sc-tags">${p.tags.map(tagHtml).join('')}</div></div>`);
@@ -486,10 +548,13 @@ function bindDrag(card,p){
 function swipe(dir,p,card){
   card = card||$('deck').querySelector('.swipe-card:not(.behind):not(.behind2)');
   if(!card) return;
-  p = p||SWIPES[deckIdx];
+  p = p||DECK[deckIdx];
   card.style.transition='transform .45s ease, opacity .45s';
   card.style.transform=`translateX(${dir*560}px) rotate(${dir*22}deg)`; card.style.opacity=0;
-  if(dir>0){ Sfx.invite(); toast('🤝','Invite sent',`${p.n.toUpperCase()} · ${p.compat}% COMPATIBLE`); addXP(XP_EVENTS.invite,'Duo invite'); if(p.compat>=90) completeQuest('q4'); }
+  if(dir>0){
+    Sfx.invite(); toast('🤝','Invite sent',`${p.n.toUpperCase()} · ${p.compat}% COMPATIBLE`);
+    addXP(XP_EVENTS.invite,'Duo invite'); if(p.compat>=90) completeQuest('q4');
+  }
   else Sfx.skip();
   setTimeout(()=>{deckIdx++;renderDeck();},380);
 }
@@ -545,6 +610,7 @@ function addLfgPost(post){
 $('postSend').onclick=async ()=>{
   const goal=$('postGoal').value.trim();
   if(!goal){ toast('⚠️','Objective required','LEAD WITH THE GOAL — IT FILLS 3× FASTER'); return; }
+  if(hasBlockedWord(goal)){ toast('🚫','Post blocked','KEEP LFG TITLES CLEAN — EDIT AND TRY AGAIN'); return; }
   const mins = {'15 min':15,'30 min':30,'1 hr':60,'3 hr':180}[postExpSel];
   $('postGoal').value=''; closeOv('postOv'); go('lfg');
   if(Backend.enabled && Backend.currentUser()){
@@ -599,7 +665,13 @@ function obShow(){
 }
 $('obBack').onclick=()=>{ OB.step--; obShow(); };
 $('obNext').onclick=()=>{
-  if(OB.step===1){ const n=$('obName').value.trim(); if(n) S.name=n; }
+  if(OB.step===1){
+    const n=$('obName').value.trim();
+    if(n){
+      if(hasBlockedWord(n)){ toast('🚫','Callsign blocked','PICK SOMETHING ELSE'); return; }
+      S.name=n;
+    }
+  }
   if(OB.step<3){ OB.step++; obShow(); return; }
   S.onboarded = true;
   closeOv('onboardOv'); renderProfile(); renderRecs();
@@ -683,6 +755,12 @@ async function initApp(){
     Backend.joinPresence(S.name, count=>{
       $('presenceBadge').style.display='inline-flex';
       $('presenceCount').textContent = count;
+    });
+    Backend.fetchProfiles(user ? user.id : null).then(profiles=>{
+      REAL_PROFILES = profiles;
+      DECK = profiles.length ? profiles.map(profileToSwipeCard) : SWIPES;
+      deckIdx = 0;
+      renderRecs(); renderDeck();
     });
   }
 

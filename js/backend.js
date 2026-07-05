@@ -107,6 +107,39 @@ const Backend = (() => {
       .subscribe();
   }
 
+  async function fetchProfiles(excludeId, limit=20){
+    if(!enabled) return [];
+    try{
+      let q = client.from('profiles').select('*').eq('onboarded', true).order('updated_at', { ascending: false }).limit(limit);
+      if(excludeId) q = q.neq('id', excludeId);
+      const { data, error } = await q;
+      if(error) throw error;
+      return data || [];
+    }catch(e){ console.warn('[backend] fetchProfiles failed', e); return []; }
+  }
+
+  async function fetchEndorsementCounts(userId){
+    if(!enabled) return {};
+    try{
+      const { data, error } = await client.from('endorsements').select('trait').eq('to_user', userId);
+      if(error) throw error;
+      const counts = {};
+      (data || []).forEach(r => { counts[r.trait] = (counts[r.trait]||0) + 1; });
+      return counts;
+    }catch(e){ console.warn('[backend] fetchEndorsementCounts failed', e); return {}; }
+  }
+
+  async function insertEndorsement(toUserId, trait){
+    if(!enabled) return false;
+    const user = currentUser();
+    if(!user || user.id === toUserId) return false;
+    try{
+      const { error } = await client.from('endorsements').insert({ from_user: user.id, to_user: toUserId, trait });
+      if(error && error.code !== '23505') throw error; // 23505 = unique violation, already endorsed = fine
+      return true;
+    }catch(e){ console.warn('[backend] insertEndorsement failed', e); return false; }
+  }
+
   function joinPresence(name, onCountChange){
     if(!enabled) return;
     const user = currentUser();
@@ -124,6 +157,7 @@ const Backend = (() => {
   return {
     get enabled(){ return enabled; },
     init, onAuthChange, currentUser, signInWithDiscord, signOut,
-    loadProfile, saveProfile, fetchLfgPosts, insertLfgPost, subscribeLfgInserts, joinPresence
+    loadProfile, saveProfile, fetchLfgPosts, insertLfgPost, subscribeLfgInserts, joinPresence,
+    fetchProfiles, fetchEndorsementCounts, insertEndorsement
   };
 })();

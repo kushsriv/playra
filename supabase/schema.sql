@@ -82,6 +82,35 @@ create policy "users can delete their own lfg posts"
 
 create index if not exists lfg_posts_expires_at_idx on public.lfg_posts (expires_at);
 
+-- ============ ENDORSEMENTS ============
+-- One row per (endorser, target, trait). A player can give the same trait
+-- to the same target only once — re-endorsing just no-ops (see the unique
+-- index below), so counts reflect distinct endorsers, not repeat clicks.
+create table if not exists public.endorsements (
+  id uuid primary key default gen_random_uuid(),
+  from_user uuid not null references public.profiles(id) on delete cascade,
+  to_user uuid not null references public.profiles(id) on delete cascade,
+  trait text not null,
+  created_at timestamptz not null default now(),
+  constraint no_self_endorse check (from_user <> to_user)
+);
+
+create unique index if not exists endorsements_unique_idx
+  on public.endorsements (from_user, to_user, trait);
+
+alter table public.endorsements enable row level security;
+
+drop policy if exists "endorsements are viewable by everyone" on public.endorsements;
+create policy "endorsements are viewable by everyone"
+  on public.endorsements for select
+  using (true);
+
+drop policy if exists "authenticated users can give endorsements" on public.endorsements;
+create policy "authenticated users can give endorsements"
+  on public.endorsements for insert
+  to authenticated
+  with check (auth.uid() = from_user);
+
 -- ============ REALTIME ============
 -- Broadcast INSERT/UPDATE/DELETE on lfg_posts to subscribed clients.
 alter publication supabase_realtime add table public.lfg_posts;
