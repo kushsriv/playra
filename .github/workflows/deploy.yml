@@ -1,5 +1,9 @@
 # Deploys PLAYRA to GitHub Pages on every push to main.
-# One-time setup: repo Settings → Pages → Source: "GitHub Actions".
+# One-time setup:
+#   1. repo Settings → Pages → Source: "GitHub Actions"
+#   2. repo Settings → Secrets and variables → Actions → New repository
+#      secret → add SUPABASE_URL and SUPABASE_ANON_KEY (see SETUP.md).
+#      Optional — without them the deployed site runs in guest mode.
 # The site then lives at https://<owner>.github.io/<repo>/
 name: Deploy to GitHub Pages
 
@@ -25,6 +29,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Write config.js from repo secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          cat > js/config.js <<EOF
+          window.PLAYRA_CONFIG = {
+            SUPABASE_URL: '${SUPABASE_URL}',
+            SUPABASE_ANON_KEY: '${SUPABASE_ANON_KEY}'
+          };
+          EOF
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
