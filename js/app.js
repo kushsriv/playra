@@ -28,7 +28,7 @@ document.addEventListener('click', e=>{ if(e.target.closest('button,.chip')) Sfx
 const S = {
   name:'Recruit', avatar:'⚡', games:['Valorant'], langs:['English'], styles:['Competitive','IGL'],
   goals:['Rank Push'], level:1, xp:0, xpNeed:100, quests:{}, achievements:new Set(['first']), onboarded:false,
-  discord:''
+  discord:'', discordVerified:false
 };
 const XP_EVENTS = { join:40, ready:25, invite:20, quest:0, post:30, register:35, hub:10 };
 
@@ -756,6 +756,11 @@ function onboardOpen(edit=false){
   OB.step=1; obShow();
   $('obName').value = edit? S.name : '';
   $('obDiscord').value = S.discord || '';
+  $('obDiscord').readOnly = S.discordVerified;
+  $('obDiscord').classList.toggle('verified', S.discordVerified);
+  $('obDiscordNote').textContent = S.discordVerified
+    ? '— ✓ verified via your Discord sign-in, can\'t be faked'
+    : '— shared with your squad only after everyone readies up';
   $('avPick').innerHTML='';
   OB.avatars.forEach(a=>{
     const d=el(`<div class="av ${a===S.avatar?'sel':''}" tabindex="0" role="button">${a}</div>`);
@@ -781,7 +786,7 @@ $('obNext').onclick=()=>{
       if(hasBlockedWord(n)){ toast('🚫','Callsign blocked','PICK SOMETHING ELSE'); return; }
       S.name=n;
     }
-    S.discord = $('obDiscord').value.trim().replace(/^@/,'').slice(0,37);
+    if(!S.discordVerified) S.discord = $('obDiscord').value.trim().replace(/^@/,'').slice(0,37);
   }
   if(OB.step<3){ OB.step++; obShow(); return; }
   S.onboarded = true;
@@ -828,6 +833,11 @@ async function doSignOut(){
 }
 $('signOutBtn').onclick=doSignOut;
 $('topSignOutBtn').onclick=doSignOut;
+function extractDiscordHandle(user){
+  const m = user?.user_metadata || {};
+  const handle = m.custom_claims?.global_name || m.full_name || m.preferred_username || m.name || m.user_name;
+  return handle ? String(handle).trim().replace(/^@/,'').slice(0,37) : '';
+}
 function applyProfileRow(row){
   S.name=row.name; S.avatar=row.avatar; S.games=row.games||[]; S.langs=row.langs||[];
   S.styles=row.styles||[]; S.goals=row.goals||[]; S.level=row.level; S.xp=row.xp; S.xpNeed=row.xp_need;
@@ -856,6 +866,11 @@ async function initApp(){
       const row = await Backend.loadProfile(user.id);
       if(row) applyProfileRow(row);
       else S.name = user.user_metadata?.full_name || user.user_metadata?.name || S.name;
+      // Always trust the live OAuth identity over anything stored — self-typed
+      // handles (or stale ones from before this was verified) get overwritten
+      // on every sign-in, so the reveal in squad rooms is never a lie.
+      const verified = extractDiscordHandle(user);
+      if(verified){ S.discord = verified; S.discordVerified = true; }
       $('signOutBtn').style.display='inline-block';
       $('topSignOutBtn').style.display='inline-flex';
       $('enterBtn').style.display='inline-flex';
