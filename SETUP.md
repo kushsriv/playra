@@ -15,9 +15,16 @@ step 4 below once you turn the backend on.
 # Backend setup (Discord login + live LFG + presence + squad rooms)
 
 PLAYRA runs with **zero setup** in guest/local mode — just open `index.html`.
-Everything below is optional and only turns on once you fill in `js/config.js`.
-Until then, `Backend.enabled` is `false` and the app behaves exactly as the
-original static prototype (localStorage only, no accounts, no network calls).
+Everything below is optional and only turns on once real Supabase
+credentials exist. Until then, `Backend.enabled` is `false` and the app
+behaves exactly as the original static prototype (localStorage only, no
+accounts, no network calls).
+
+**Credentials are never committed to the repo.** `js/config.js` is
+git-ignored; production deploys get real values injected by the GitHub
+Actions workflow from encrypted repo secrets (step 5). For local dev, copy
+`js/config.example.js` to `js/config.js` and fill it in there — that copy
+stays on your machine only.
 
 ## What this unlocks
 
@@ -35,46 +42,61 @@ original static prototype (localStorage only, no accounts, no network calls).
 
 1. Go to [supabase.com](https://supabase.com) → New project (free tier is enough to start).
 2. Once it's up, open **Project Settings → API** and copy:
-   - **Project URL**
-   - **anon public key**
+   - **Project URL** — the bare `https://<ref>.supabase.co`, *not* the `/rest/v1/...` REST endpoint shown elsewhere on that page
+   - **anon public key** (Supabase's newer dashboards call this the **Publishable key**)
 
 ## 2. Run the schema
 
 1. Open **SQL Editor → New query** in your Supabase dashboard.
 2. Paste the contents of [`supabase/schema.sql`](supabase/schema.sql) and run it.
-   This creates `profiles` and `lfg_posts` tables with row-level security
-   policies and enables realtime on `lfg_posts`. It's idempotent — safe to
+   This creates `profiles`, `lfg_posts`, and `endorsements` tables with row-level
+   security policies and enables realtime on `lfg_posts`. It's idempotent — safe to
    re-run if you change something later.
 
 ## 3. Register a Discord OAuth app
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) → New Application.
 2. **OAuth2 → General**: copy the **Client ID** and **Client Secret**.
+   (Discord only shows the secret once — if you lose it, you'll need to
+   regenerate it and re-paste it into Supabase immediately.)
 3. **OAuth2 → Redirects**: add the callback URL Supabase gives you — it's shown
    on the Discord provider settings page in step 4 below
    (`https://<your-project-ref>.supabase.co/auth/v1/callback`).
 
 ## 4. Enable the Discord provider in Supabase
 
-1. In Supabase: **Authentication → Providers → Discord** → toggle it on.
+1. In Supabase: **Authentication → Sign In / Providers → Discord** → toggle it on.
 2. Paste the Discord **Client ID** and **Client Secret** from step 3.
 3. Under **Authentication → URL Configuration**, add the URL you'll deploy
    PLAYRA to (and `http://localhost:8080` or similar for local testing) to
    **Redirect URLs** — Supabase will refuse to redirect back to a URL that
    isn't allow-listed here.
 
-## 5. Fill in `js/config.js`
+## 5. Add repo secrets for production, or a local config.js for dev
 
-```js
-window.PLAYRA_CONFIG = {
-  SUPABASE_URL: 'https://your-project-ref.supabase.co',
-  SUPABASE_ANON_KEY: 'your-anon-public-key'
-};
+**Production (GitHub Pages deploy):**
+
+1. Repo **Settings → Secrets and variables → Actions → New repository secret**.
+2. Add `SUPABASE_URL` (the bare project URL) and `SUPABASE_ANON_KEY` (the anon/publishable key).
+3. Push anything to `main` (or re-run the workflow from the Actions tab) —
+   the workflow writes a real `js/config.js` into the build from these
+   secrets. Nothing sensitive touches git history.
+
+**Local dev:**
+
+```bash
+cp js/config.example.js js/config.js
 ```
 
-The anon key is safe to ship to the browser — it's the one designed for
-client-side use, and everything it can touch is gated by the row-level
-security policies in `schema.sql`.
+Then edit `js/config.js` with the same two values. It's git-ignored, so it
+stays local.
+
+The anon key is safe to ship to the browser either way — it's the one
+designed for client-side use, and everything it can touch is gated by the
+row-level security policies in `schema.sql`. Keeping it out of source
+control isn't about the key being secret so much as good hygiene: it stops
+bots that scrape public repos for API keys from spamming your project, and
+it means rotating a leaked key never requires a history rewrite.
 
 ## 6. Test it
 
@@ -97,13 +119,19 @@ Open `http://localhost:8080`, click **Sign in with Discord**, and confirm:
 ## Notes / limits of this integration
 
 - This wiring was built and tested against a **mocked** Supabase client
-  (no live project or Discord app exists in this environment) — the JS
-  logic paths are verified, but you should still run through the checklist
-  in step 6 once you have real credentials.
+  (no live project or Discord app exists in the environment it was built
+  in) — the JS logic paths are verified, but run through the checklist in
+  step 6 once you have real credentials.
 - LFG posts don't auto-delete when they expire; the client just hides
   expired rows. Run the commented cleanup query at the bottom of
   `schema.sql` periodically (or wire it to Supabase's cron feature) if you
   want the table itself to stay small.
-- There's no moderation yet — anyone signed in can post anything. See
-  `DEPLOYMENT_ROADMAP.md` for the Perspective API suggestion before opening
-  this up publicly.
+- There's no server-side moderation yet — only the client-side blocklist
+  in `js/app.js`. See `DEPLOYMENT_ROADMAP.md` for the Perspective API
+  suggestion before opening this up publicly at scale.
+- If you ever suspect a key leaked (e.g. it was committed before this
+  secrets-based flow existed), rotate it: Supabase's newer projects let
+  you revoke/reissue the publishable key directly (Settings → API Keys)
+  without touching the JWT secret; older projects require resetting the
+  JWT secret, which invalidates the anon key *and* the service_role key
+  together — update both wherever they're used if you do that.
