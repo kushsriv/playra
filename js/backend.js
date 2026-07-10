@@ -33,7 +33,13 @@ const Backend = (() => {
   function signInWithDiscord(){
     if(!enabled) return;
     const redirectTo = window.location.href.split('#')[0];
-    client.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo } });
+    // explicit scopes: Supabase's Discord token exchange fetches the
+    // user's email as part of sign-in, and needs the "email" scope
+    // granted to do it — without it (or without Discord returning an
+    // email at all) the callback comes back as
+    // error=server_error&error_code=unexpected_failure&error_description=
+    // Error+getting+user+email+from+external+provider
+    client.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo, scopes: 'identify email' } });
   }
 
   async function signOut(){
