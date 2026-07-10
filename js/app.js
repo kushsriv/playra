@@ -27,9 +27,53 @@ document.addEventListener('click', e=>{ if(e.target.closest('button,.chip')) Sfx
 /* ================= STATE ================= */
 const S = {
   name:'Recruit', avatar:'⚡', games:['Valorant'], langs:['English'], styles:['Competitive','IGL'],
-  goals:['Rank Push'], level:1, xp:0, xpNeed:100, quests:{}, achievements:new Set(['first'])
+  goals:['Rank Push'], level:1, xp:0, xpNeed:100, quests:{}, achievements:new Set(['first']), onboarded:false,
+  discord:''
 };
 const XP_EVENTS = { join:40, ready:25, invite:20, quest:0, post:30, register:35, hub:10 };
+
+/* ================= PERSISTENCE ================= */
+const STORAGE_KEY = 'playra_state_v1';
+/* localStorage writes are cheap and happen immediately; the server upsert
+   is debounced so a burst of XP events becomes one network write */
+let profileSyncTimer=null;
+function syncProfileNow(){
+  if(profileSyncTimer){ clearTimeout(profileSyncTimer); profileSyncTimer=null; }
+  if(Backend.enabled && Backend.currentUser()){
+    S.moodIdx = typeof moodIdx==='number'?moodIdx:0;
+    Backend.saveProfile(S);
+  }
+}
+function saveState(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      name:S.name, avatar:S.avatar, games:S.games, langs:S.langs, styles:S.styles, goals:S.goals,
+      level:S.level, xp:S.xp, xpNeed:S.xpNeed, quests:S.quests, achievements:[...S.achievements],
+      onboarded:S.onboarded, discord:S.discord||'', moodIdx: typeof moodIdx==='number'?moodIdx:0
+    }));
+  }catch(e){}
+  if(Backend.enabled && Backend.currentUser()){
+    clearTimeout(profileSyncTimer);
+    profileSyncTimer=setTimeout(syncProfileNow, 1500);
+  }
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden && profileSyncTimer) syncProfileNow(); });
+function loadState(){
+  let raw;
+  try{ raw = localStorage.getItem(STORAGE_KEY); }catch(e){ return false; }
+  if(!raw) return false;
+  try{
+    const d = JSON.parse(raw);
+    Object.assign(S, {
+      name:d.name, avatar:d.avatar, games:d.games, langs:d.langs, styles:d.styles, goals:d.goals,
+      level:d.level, xp:d.xp, xpNeed:d.xpNeed, quests:d.quests||{}, onboarded:!!d.onboarded,
+      discord:d.discord||''
+    });
+    S.achievements = new Set(d.achievements && d.achievements.length ? d.achievements : ['first']);
+    if(typeof d.moodIdx==='number') moodIdx = d.moodIdx;
+    return true;
+  }catch(e){ return false; }
+}
 
 /* ================= DATA ================= */
 const GAMES = [
@@ -53,6 +97,9 @@ let LFG = [
   {game:'Apex Legends', title:'Ranked grind to Diamond — need entry fragger', tags:['Mumbai','Duo→Trio','Mic required','Plat+'], slots:3, filled:2, mins:21},
   {game:'Rocket League', title:'Champ 2s partner, rotation-first playstyle', tags:['Any region','No toxicity','C1–C3'], slots:2, filled:1, mins:44}
 ];
+/* every post carries an absolute expiry; countdowns derive from it so
+   re-renders can't reset them, and expired posts drop off the radar */
+LFG.forEach(p=>p.expiresAt = Date.now() + p.mins*60000);
 const MISSIONS = [
   {game:'Valorant', goal:'Reach Radiant before Episode ends', desc:'Immortal 3, 78 RR. Need a consistent duo — VOD review together twice a week.', diff:5, by:'Vex', rep:'4.9'},
   {game:'Minecraft', goal:'Hardcore Ender Dragon, zero deaths', desc:'Third attempt. Looking for one calm player who knows bastion routes.', diff:4, by:'Blocksmith', rep:'5.0'},
@@ -107,9 +154,15 @@ const ENDORSE = [['Communication',96],['Clutch',88],['Leadership',82],['Patient'
 /* ================= HELPERS ================= */
 const $ = id => document.getElementById(id);
 const el = (h) => { const t=document.createElement('template'); t.innerHTML=h.trim(); return t.content.firstChild; };
-const tagHtml = t => `<span class="tag ${t[0]}">${t[1]}</span>`;
+const tagHtml = t => `<span class="tag ${t[0]}">${esc(t[1])}</span>`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* Minimal client-side moderation. Not a substitute for a real moderation
+   pipeline (see DEPLOYMENT_ROADMAP.md re: Perspective API) — this just
+   stops the obvious stuff before it ever reaches the database. */
+const BLOCKLIST = ['fuck','shit','bitch','nigger','faggot','cunt','asshole','whore','slut','retard','rape'];
+const hasBlockedWord = text => { const low=String(text).toLowerCase(); return BLOCKLIST.some(w=>low.includes(w)); };
 function toast(ico, title, desc, cls=''){
-  const t = el(`<div class="toast ${cls}"><div class="t-ico">${ico}</div><div><div class="t-t">${title}</div><div class="t-d">${desc}</div></div></div>`);
+  const t = el(`<div class="toast ${cls}"><div class="t-ico">${ico}</div><div><div class="t-t">${esc(title)}</div><div class="t-d">${esc(desc)}</div></div></div>`);
   $('toasts').appendChild(t); Sfx.ping();
   setTimeout(()=>{ t.classList.add('out'); setTimeout(()=>t.remove(),350); }, 4200);
 }
@@ -118,7 +171,7 @@ function addXP(n, why){
   while(S.xp >= S.xpNeed){ S.xp -= S.xpNeed; S.level++; S.xpNeed = Math.round(S.xpNeed*1.35);
     $('lvlTxt').textContent = `LEVEL ${S.level}`; const f=$('lvlFlash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); Sfx.lvl();
   }
-  renderXP();
+  renderXP(); saveState();
 }
 function renderXP(){
   $('xpFill').style.width = Math.min(100, S.xp/S.xpNeed*100)+'%';
@@ -127,7 +180,7 @@ function renderXP(){
 }
 function unlockAch(id, nm){
   if(S.achievements.has(id)) return; S.achievements.add(id);
-  toast('🏅','Achievement unlocked', nm.toUpperCase(),'ach-t'); renderAch();
+  toast('🏅','Achievement unlocked', nm.toUpperCase(),'ach-t'); renderAch(); saveState();
 }
 
 /* ================= NAV ================= */
@@ -140,6 +193,24 @@ function go(v){
   window.scrollTo({top:0, behavior:'smooth'});
 }
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));
+
+/* ================= HOTKEYS =================
+   1–7 jump between views, Esc closes the top overlay — standard game-UI
+   muscle memory. Disabled while typing or during onboarding. */
+const VIEW_KEYS=['dash','lfg','missions','discover','hubs','tours','profile'];
+document.querySelectorAll('.nav-btn').forEach((b,i)=>{
+  if(i<VIEW_KEYS.length) b.insertAdjacentHTML('beforeend', `<span class="kbd">${i+1}</span>`);
+});
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    const open=[...document.querySelectorAll('.overlay.on')].pop();
+    if(open && open.id!=='onboardOv'){ if(open.id==='roomOv') closeRoom(); else closeOv(open.id); }
+    return;
+  }
+  if(e.target.matches('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(!$('app').classList.contains('on') || document.querySelector('.overlay.on')) return;
+  if(/^[1-7]$/.test(e.key)) go(VIEW_KEYS[+e.key-1]);
+});
 
 /* ================= LANDING: particles + neon rain + parallax ================= */
 (function(){
@@ -180,6 +251,8 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>
   const blips=[{r:.45,ang:.9,c:'#00E5FF'},{r:.7,ang:2.4,c:'#FF3D81'},{r:.85,ang:4.2,c:'#3DFFA0'},{r:.3,ang:5.4,c:'#FFB020'}];
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function draw(){
+    // don't burn frames while the dashboard is off-screen
+    if(!$('view-dash').classList.contains('on')){ requestAnimationFrame(draw); return; }
     cx.clearRect(0,0,440,440);
     cx.strokeStyle='rgba(0,229,255,.18)'; cx.lineWidth=1;
     [0.33,0.66,1].forEach(k=>{cx.beginPath();cx.arc(C,C,R*k*.92,0,7);cx.stroke();});
@@ -211,17 +284,50 @@ document.addEventListener('mousemove', e=>{
   c.style.transform=`perspective(900px) rotateY(${x*4}deg) rotateX(${-y*4}deg)`;
 });
 
+/* ================= REAL MATCHMAKING ================= */
+let REAL_PROFILES = [];
+const jac = (x,y) => { x=x||[]; y=y||[]; if(!x.length||!y.length) return 0; const sy=new Set(y); const inter=x.filter(v=>sy.has(v)).length; return inter/new Set([...x,...y]).size; };
+function computeCompat(mine, other){
+  const score = jac(mine.games,other.games)*0.4 + jac(mine.goals,other.goals)*0.3 + jac(mine.langs,other.langs)*0.15 + jac(mine.styles,other.styles)*0.15;
+  return Math.max(38, Math.round(score*100));
+}
+function profileToSwipeCard(p){
+  return {
+    n:p.name||'Operator', h:'@'+(p.name||'operator').toLowerCase().replace(/\s/g,''),
+    compat:computeCompat(S,p), glow:'rgba(0,229,255,.2)',
+    bars:[['GAME OVERLAP',Math.round(jac(S.games,p.games)*100)],['COMMS STYLE',Math.round(jac(S.langs,p.langs)*100)],
+          ['GOAL ALIGNMENT',Math.round(jac(S.goals,p.goals)*100)],['VIBE',Math.round(jac(S.styles,p.styles)*100)]],
+    tags:[...(p.games||[]).slice(0,2).map(g=>['cy',g.toUpperCase()]),...(p.styles||[]).slice(0,1).map(s=>['mg',s.toUpperCase()]),...(p.langs||[]).slice(0,1).map(l=>['am',l.toUpperCase()])],
+    id:p.id
+  };
+}
+
 /* ================= RENDER: DASHBOARD ================= */
 function renderRecs(){
   $('recGrid').innerHTML='';
-  RECS.forEach(r=>{
-    $('recGrid').appendChild(el(`<div class="rec-card">
-      <div class="rec-top"><div class="av">${r.n[0]}</div>
-        <div><div class="rn">${r.n}</div><div class="rr">${r.rank}</div></div>
+  const real = REAL_PROFILES.map(p=>({
+    n:p.name||'Operator', rank:((p.games&&p.games[0])||'Operator')+' · LVL '+(p.level||1),
+    compat:computeCompat(S,p), id:p.id,
+    tags:[...(p.games||[]).slice(0,1).map(g=>['cy',g.toUpperCase()]),...(p.styles||[]).slice(0,1).map(s=>['mg',s.toUpperCase()]),...(p.langs||[]).slice(0,1).map(l=>['am',l.toUpperCase()])]
+  })).sort((a,b)=>b.compat-a.compat).slice(0,3);
+  const list = real.length ? real : RECS;
+  list.forEach(r=>{
+    const card = el(`<div class="rec-card">
+      <div class="rec-top"><div class="av"></div>
+        <div><div class="rn"></div><div class="rr"></div></div>
         <div class="compat"><b>${r.compat}%</b><span>MATCH</span></div></div>
       <div class="rec-tags">${r.tags.map(tagHtml).join('')}</div>
-      <button class="btn sm primary" onclick="inviteRec('${r.n}')">INVITE TO SQUAD</button>
-    </div>`));
+      <div style="display:flex;gap:8px">
+        <button class="btn sm primary invite-btn" style="flex:1">INVITE TO SQUAD</button>
+        <button class="btn sm ghost endorse-btn" style="${r.id?'':'display:none'}">ENDORSE</button>
+      </div>
+    </div>`);
+    card.querySelector('.av').textContent = (r.n[0]||'?').toUpperCase();
+    card.querySelector('.rn').textContent = r.n;
+    card.querySelector('.rr').textContent = r.rank;
+    card.querySelector('.invite-btn').onclick=()=>inviteRec(r.n);
+    if(r.id) card.querySelector('.endorse-btn').onclick=()=>openEndorsePicker(r.id, r.n);
+    $('recGrid').appendChild(card);
   });
 }
 function inviteRec(n){ addXP(XP_EVENTS.invite, `Invited ${n}`); completeQuest('q4'); }
@@ -261,7 +367,8 @@ function renderLfgFilters(){
   const cats=['All',...new Set(LFG.map(p=>p.game))];
   $('lfgFilters').innerHTML='';
   cats.forEach(c=>{
-    const b=el(`<button class="chip ${c===lfgFilter?'sel':''}">${c}</button>`);
+    const n = c==='All' ? LFG.length : LFG.filter(p=>p.game===c).length;
+    const b=el(`<button class="chip ${c===lfgFilter?'sel':''}">${c} <span class="chip-n">${n}</span></button>`);
     b.onclick=()=>{lfgFilter=c;renderLfgFilters();renderLfg();};
     $('lfgFilters').appendChild(b);
   });
@@ -274,25 +381,52 @@ function renderLfg(){
     const g=gameBy(p.game);
     const card=el(`<div class="panel lfg-card" style="--accent:${g.c}">
       <div class="game-ico" style="color:${g.c};background:${g.glow};border-color:${g.c}55">${g.ab}</div>
-      <div><div class="lfg-title">${p.title}</div>
-        <div class="lfg-meta"><span class="tag" style="color:${g.c};border-color:${g.c}55">${p.game.toUpperCase()}</span>${p.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div></div>
+      <div><div class="lfg-title">${esc(p.title)}${p.live?' <span class=\"tag lm\" style=\"margin-left:6px\">LIVE</span>':''}</div>
+        <div class="lfg-meta"><span class="tag" style="color:${g.c};border-color:${g.c}55">${p.game.toUpperCase()}</span>${p.author?`<span class="tag">BY ${esc(p.author.toUpperCase())}</span>`:''}${p.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div></div>
       <div class="lfg-right">
-        <div class="countdown" data-mins="${p.mins}"><span class="cd-dot"></span><span class="cd-txt mono">--:--</span></div>
+        <div class="countdown" data-expires="${p.expiresAt||''}"><span class="cd-dot"></span><span class="cd-txt mono">--:--</span></div>
         <div class="slots">${Array.from({length:p.slots},(_,k)=>`<i class="${k<p.filled?'fill':''}"></i>`).join('')}</div>
         <button class="btn sm primary">JOIN SQUAD</button>
       </div></div>`);
-    card.querySelector('.btn').onclick=()=>openRoom(p);
+    card.querySelector('.btn').onclick=()=>joinSquad(p);
     list.appendChild(card);
   });
 }
-/* live countdowns */
+function updateLfgPost(post){
+  const i = LFG.findIndex(x=>x.id && x.id===post.id);
+  if(i<0) return;
+  LFG[i] = Object.assign(LFG[i], post);
+  renderLfg();
+}
+async function joinSquad(p){
+  if(p.id && Backend.enabled && Backend.currentUser()){
+    const updated = await Backend.joinLfgPost(p.id);
+    if(updated) updateLfgPost(updated);
+    else if(p.filled>=p.slots){ toast('⚠️','Squad full','THIS ONE FILLED UP — SCAN FOR ANOTHER'); return; }
+  } else if(p.filled < p.slots){
+    p.filled++; renderLfg();
+  }
+  openRoom(p);
+}
+/* live countdowns — derived from each post's absolute expiry, so
+   re-renders can't reset them; expired posts are pruned from the feed */
 setInterval(()=>{
-  document.querySelectorAll('.countdown[data-mins]').forEach(c=>{
-    let s = c._sec ?? (+c.dataset.mins*60); s=Math.max(0,s-1); c._sec=s;
+  const now = Date.now();
+  document.querySelectorAll('.countdown[data-expires]').forEach(c=>{
+    const exp = +c.dataset.expires;
+    if(!exp) return;
+    const s = Math.max(0, Math.round((exp-now)/1000));
     const m=String(Math.floor(s/60)).padStart(2,'0'), ss=String(s%60).padStart(2,'0');
     c.querySelector('.cd-txt').textContent=`${m}:${ss}`;
     c.classList.toggle('crit', s<300);
   });
+  const live = LFG.filter(p=>!p.expiresAt || p.expiresAt > now);
+  if(live.length !== LFG.length){
+    LFG = live;
+    if(lfgFilter!=='All' && !LFG.some(p=>p.game===lfgFilter)) lfgFilter='All';
+    renderLfgFilters(); renderLfg();
+    $('lfgBadge').textContent = LFG.length+' LIVE';
+  }
 },1000);
 
 /* ================= MISSIONS ================= */
@@ -315,6 +449,43 @@ function renderMissions(){
     $('missionGrid').appendChild(c);
   });
 }
+
+/* ================= GAME CAROUSEL ================= */
+let gcIdx=0, gcTimer=null;
+const gcReduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function renderCarousel(){
+  const track=$('gcTrack'); track.innerHTML='';
+  GAMES.forEach(g=>{
+    const s=el(`<div class="gc-slide" style="--hub:${g.c};--hub-glow:${g.glow}">
+      <div class="gc-abbr">${g.ab}</div>
+      <div class="gc-info">
+        <div class="gc-tag">${g.tag}</div>
+        <div class="gc-name">${g.n}</div>
+        <div class="gc-stat"><b>${g.online}</b> PLAYERS ONLINE NOW</div>
+        <button class="btn sm primary gc-enter">ENTER HUB →</button>
+      </div></div>`);
+    s.querySelector('.gc-enter').onclick=e=>{ e.stopPropagation(); selectHub(g); };
+    s.onclick=()=>selectHub(g);
+    track.appendChild(s);
+  });
+  $('gcDots').innerHTML='';
+  GAMES.forEach((g,i)=>{
+    const d=el(`<i class="${i===gcIdx?'on':''}"></i>`);
+    d.onclick=()=>gcGoto(i);
+    $('gcDots').appendChild(d);
+  });
+  gcUpdate();
+}
+function gcUpdate(){
+  $('gcTrack').style.transform=`translateX(-${gcIdx*100}%)`;
+  $('gcDots').querySelectorAll('i').forEach((d,i)=>d.classList.toggle('on',i===gcIdx));
+}
+function gcGoto(i){ gcIdx=(i+GAMES.length)%GAMES.length; gcUpdate(); gcRestart(); }
+function gcRestart(){ clearInterval(gcTimer); if(!gcReduce) gcTimer=setInterval(()=>gcGoto(gcIdx+1),4500); }
+$('gcNext').onclick=()=>gcGoto(gcIdx+1);
+$('gcPrev').onclick=()=>gcGoto(gcIdx-1);
+$('gameCarousel').addEventListener('mouseenter',()=>clearInterval(gcTimer));
+$('gameCarousel').addEventListener('mouseleave',gcRestart);
 
 /* ================= HUBS ================= */
 function renderHubs(){
@@ -365,12 +536,35 @@ function renderTours(){
 /* ================= PROFILE ================= */
 function renderProfile(){
   $('gcName').textContent=S.name; $('heroName').textContent=S.name;
-  $('sideName').textContent=S.name; 
-  $('gcHandle').innerHTML=`@${S.name.toLowerCase().replace(/\s/g,'')} · MUMBAI SERVER · LVL <span id="gcLvl">${S.level}</span>`;
+  $('sideName').textContent=S.name;
+  $('gcHandle').innerHTML=`@${esc(S.name.toLowerCase().replace(/\s/g,''))} · MUMBAI SERVER · LVL <span id="gcLvl">${S.level}</span>`;
   ['sideAv','gcAv'].forEach(id=>$(id).textContent=S.avatar);
   $('gcTags').innerHTML = [...S.games.map(g=>['cy',g.toUpperCase()]),...S.styles.map(s=>['mg',s.toUpperCase()]),...S.langs.map(l=>['am',l.toUpperCase()]),...S.goals.map(g=>['lm',g.toUpperCase()])].map(tagHtml).join('');
-  $('endorseList').innerHTML = ENDORSE.map(e=>`<div class="endorse"><span class="e-nm">${e[0]}</span><span class="e-bar"><i style="width:${e[1]}%"></i></span><span class="e-ct">${e[1]}</span></div>`).join('');
+  $('endorseList').innerHTML = ENDORSE.map(e=>`<div class="endorse"><span class="e-nm">${esc(e[0])}</span><span class="e-bar"><i style="width:${e[1]}%"></i></span><span class="e-ct">${e[1]}</span></div>`).join('');
   renderAch();
+  if(Backend.enabled && Backend.currentUser()){
+    Backend.fetchEndorsementCounts(Backend.currentUser().id).then(counts=>{
+      const entries = Object.entries(counts);
+      if(!entries.length) return;
+      const max = Math.max(...entries.map(e=>e[1]));
+      $('endorseList').innerHTML = entries.sort((a,b)=>b[1]-a[1])
+        .map(([trait,count])=>`<div class="endorse"><span class="e-nm">${esc(trait)}</span><span class="e-bar"><i style="width:${Math.round(count/max*100)}%"></i></span><span class="e-ct">${count}</span></div>`).join('');
+    });
+  }
+}
+function openEndorsePicker(targetId, targetName){
+  $('endorseTarget').textContent = targetName;
+  $('endorseTraits').innerHTML='';
+  ENDORSE.forEach(([trait])=>{
+    const c=el(`<button class="chip">${esc(trait)}</button>`);
+    c.onclick=async ()=>{
+      const ok = await Backend.insertEndorsement(targetId, trait);
+      if(ok){ toast('🤝','Endorsement sent',`${trait.toUpperCase()} — GIVEN TO ${targetName.toUpperCase()}`); completeQuest('q2'); closeOv('endorseOv'); }
+      else toast('⚠️','Could not send','TRY AGAIN IN A MOMENT');
+    };
+    $('endorseTraits').appendChild(c);
+  });
+  openOv('endorseOv');
 }
 function renderAch(){
   $('achGrid').innerHTML='';
@@ -383,16 +577,17 @@ function renderAch(){
 
 /* ================= SWIPE DECK ================= */
 let deckIdx=0;
+let DECK = SWIPES;
 function renderDeck(){
   const d=$('deck'); d.innerHTML='';
-  const rest = SWIPES.slice(deckIdx, deckIdx+3);
+  const rest = DECK.slice(deckIdx, deckIdx+3);
   if(!rest.length){ d.appendChild(el(`<div class="empty" style="height:100%;display:flex;flex-direction:column;justify-content:center"><div class="e-ico">🛰️</div><b>Radar swept clean</b>New compatible operators surface every few minutes.<br><br><button class="btn sm primary" onclick="deckIdx=0;renderDeck()">RESCAN</button></div>`)); return; }
   rest.reverse().forEach((p,i)=>{
     const pos = rest.length-1-i; // 0 = top
     const card=el(`<div class="swipe-card ${pos===1?'behind':pos===2?'behind2':''}" style="--sc-glow:${p.glow}">
       <div class="sc-bg"></div>
       <div class="stamp invite">INVITE</div><div class="stamp skip">SKIP</div>
-      <div class="sc-head"><div class="av ring">${p.n[0]}</div><div><div class="nm">${p.n}</div><div class="hn">${p.h}</div></div></div>
+      <div class="sc-head"><div class="av ring">${esc((p.n[0]||'?').toUpperCase())}</div><div><div class="nm">${esc(p.n)}</div><div class="hn">${esc(p.h)}</div></div></div>
       <div class="sc-compat"><b>${p.compat}%</b><span>SQUAD COMPATIBILITY</span></div>
       <div class="sc-bars">${p.bars.map(b=>`<div class="sc-bar"><div class="lb"><span>${b[0]}</span><span>${b[1]}</span></div><div class="tr"><i style="width:${b[1]}%"></i></div></div>`).join('')}</div>
       <div class="sc-tags">${p.tags.map(tagHtml).join('')}</div></div>`);
@@ -417,40 +612,84 @@ function bindDrag(card,p){
 function swipe(dir,p,card){
   card = card||$('deck').querySelector('.swipe-card:not(.behind):not(.behind2)');
   if(!card) return;
-  p = p||SWIPES[deckIdx];
+  p = p||DECK[deckIdx];
   card.style.transition='transform .45s ease, opacity .45s';
   card.style.transform=`translateX(${dir*560}px) rotate(${dir*22}deg)`; card.style.opacity=0;
-  if(dir>0){ Sfx.invite(); toast('🤝','Invite sent',`${p.n.toUpperCase()} · ${p.compat}% COMPATIBLE`); addXP(XP_EVENTS.invite,'Duo invite'); if(p.compat>=90) completeQuest('q4'); }
+  if(dir>0){
+    Sfx.invite(); toast('🤝','Invite sent',`${p.n.toUpperCase()} · ${p.compat}% COMPATIBLE`);
+    addXP(XP_EVENTS.invite,'Duo invite'); if(p.compat>=90) completeQuest('q4');
+  }
   else Sfx.skip();
   setTimeout(()=>{deckIdx++;renderDeck();},380);
 }
 $('btnSkip').onclick=()=>swipe(-1);
 $('btnInvite').onclick=()=>swipe(1);
 
-/* ================= SQUAD ROOM ================= */
-let roomTimer=null;
+/* ================= SQUAD ROOM =================
+   Live posts (backend + signed in) get a real realtime room: presence
+   shows who's actually here, READY re-tracks your state to everyone,
+   and Discord handles are revealed only once the whole squad is ready —
+   that's the handoff. Demo posts keep the simulated flow. */
+let roomTimer=null, roomIsLive=false, roomLocked=false;
+function memberCard(m, isSelf){
+  const card = el(`<div class="rm ${m.ready?'ready':''}">
+    <div class="av"></div><div class="rm-n"></div><div class="rm-s">${m.ready?'READY':'STANDBY'}</div>
+    <div class="rm-d" style="display:none"></div></div>`);
+  card.querySelector('.av').textContent = m.avatar || (m.name||'?')[0].toUpperCase();
+  card.querySelector('.rm-n').textContent = (m.name||'Operator') + (isSelf?' (you)':'');
+  return card;
+}
+function renderRoomMembers(members, selfKey){
+  const wrap = $('roomMembers'); wrap.innerHTML='';
+  const allReady = members.length>=2 && members.every(m=>m.ready);
+  members.forEach(m=>{
+    const card = memberCard(m, m.key===selfKey);
+    if(allReady && m.discord){
+      const d = card.querySelector('.rm-d');
+      d.style.display='block'; d.textContent='@'+m.discord;
+      d.title='Click to copy';
+      d.onclick=()=>{ navigator.clipboard?.writeText(m.discord).then(()=>toast('📋','Copied',('@'+m.discord).toUpperCase())); };
+    }
+    wrap.appendChild(card);
+  });
+  if(members.length<2) wrap.appendChild(el(`<div class="rm waiting"><div class="av">📡</div><div class="rm-n">Waiting for squad…</div><div class="rm-s">SHARE THE POST</div></div>`));
+  if(allReady && !roomLocked){
+    roomLocked = true; Sfx.launch();
+    toast('🚀','SQUAD LOCKED','ALL READY — DISCORD HANDLES REVEALED, ADD EACH OTHER');
+    unlockAch('clutch','First Clutch');
+  }
+}
 function openRoom(p){
-  const g=gameBy(p.game);
+  roomIsLive = !!(p.id && Backend.enabled && Backend.currentUser());
+  roomLocked = false;
   $('roomTitle').textContent=p.title.length>44?p.title.slice(0,44)+'…':p.title;
-  $('roomSub').textContent=`${p.game} · voice channel armed. Everyone presses READY, then the room hands off to the game lobby.`;
-  const names=['Vex','Nyx','Draco', S.name];
-  $('roomMembers').innerHTML = names.map((n,i)=>`<div class="rm ${i<2?'ready':''}" id="rm-${i}">
-    <div class="av">${i===3?S.avatar:n[0]}</div><div class="rm-n">${n}${i===3?' (you)':''}</div><div class="rm-s">${i<2?'READY':'STANDBY'}</div></div>`).join('');
+  $('roomSub').textContent = roomIsLive
+    ? `${p.game} · live room. Everyone presses READY, then Discord handles unlock so the squad can connect.`
+    : `${p.game} · voice channel armed. Everyone presses READY, then the room hands off to the game lobby.`;
   $('readyBtn').disabled=false; $('readyBtn').textContent='PRESS READY';
   openOv('roomOv'); addXP(XP_EVENTS.join,'Joined squad room'); completeQuest('q1');
+  if(roomIsLive){
+    $('roomMembers').innerHTML='<div class="rm waiting"><div class="av">📡</div><div class="rm-n">Connecting…</div><div class="rm-s">LINKING ROOM</div></div>';
+    Backend.joinRoom(p.id, {name:S.name, avatar:S.avatar, discord:S.discord||''}, renderRoomMembers);
+  } else {
+    const names=['Vex','Nyx','Draco', S.name];
+    $('roomMembers').innerHTML = names.map((n,i)=>`<div class="rm ${i<2?'ready':''}" id="rm-${i}">
+      <div class="av">${i===3?S.avatar:n[0]}</div><div class="rm-n">${i===3?esc(n)+' (you)':n}</div><div class="rm-s">${i<2?'READY':'STANDBY'}</div></div>`).join('');
+  }
   let s=300; clearInterval(roomTimer);
   roomTimer=setInterval(()=>{ s=Math.max(0,s-1);
     $('roomCd').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
     if(!s) clearInterval(roomTimer); },1000);
 }
 $('readyBtn').onclick=()=>{
-  const me=$('rm-3'); me.classList.add('ready'); me.querySelector('.rm-s').textContent='READY';
   $('readyBtn').disabled=true; $('readyBtn').textContent='LOCKED IN'; Sfx.ready();
   completeQuest('q3');
+  if(roomIsLive){ Backend.setRoomReady(); return; }
+  const me=$('rm-3'); me.classList.add('ready'); me.querySelector('.rm-s').textContent='READY';
   setTimeout(()=>{ const o=$('rm-2'); o.classList.add('ready'); o.querySelector('.rm-s').textContent='READY'; Sfx.ready(); },900);
   setTimeout(()=>{ Sfx.launch(); toast('🚀','SQUAD LOCKED','ALL READY — HANDING OFF TO GAME LOBBY'); unlockAch('clutch','First Clutch'); closeRoom(); },2100);
 };
-function closeRoom(){ clearInterval(roomTimer); closeOv('roomOv'); }
+function closeRoom(){ clearInterval(roomTimer); Backend.leaveRoom && Backend.leaveRoom(); closeOv('roomOv'); }
 
 /* ================= POST MODAL ================= */
 let postGameSel='Valorant', postExpSel='15 min';
@@ -466,14 +705,30 @@ function openPost(){
   });
   openOv('postOv');
 }
-$('postSend').onclick=()=>{
+const seenLfgIds = new Set();
+function addLfgPost(post){
+  if(post.id){ if(seenLfgIds.has(post.id)) return; seenLfgIds.add(post.id); }
+  LFG.unshift(post);
+  renderLfgFilters(); renderLfg();
+  $('lfgBadge').textContent = LFG.length+' LIVE';
+}
+let postSending=false;
+$('postSend').onclick=async ()=>{
+  if(postSending) return;
   const goal=$('postGoal').value.trim();
   if(!goal){ toast('⚠️','Objective required','LEAD WITH THE GOAL — IT FILLS 3× FASTER'); return; }
+  if(hasBlockedWord(goal)){ toast('🚫','Post blocked','KEEP LFG TITLES CLEAN — EDIT AND TRY AGAIN'); return; }
   const mins = {'15 min':15,'30 min':30,'1 hr':60,'3 hr':180}[postExpSel];
-  LFG.unshift({game:postGameSel,title:goal,tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins});
-  $('postGoal').value=''; closeOv('postOv');
-  renderLfgFilters(); renderLfg(); go('lfg');
-  addXP(XP_EVENTS.post,'Broadcast LFG'); $('lfgBadge').textContent=LFG.length+' LIVE';
+  $('postGoal').value=''; closeOv('postOv'); go('lfg');
+  if(Backend.enabled && Backend.currentUser()){
+    postSending=true; $('postSend').disabled=true;
+    const saved = await Backend.insertLfgPost({game:postGameSel,title:goal,tags:['Mic required',postExpSel+' window'],slots:5,filled:1,mins,authorName:S.name});
+    postSending=false; $('postSend').disabled=false;
+    if(saved){ addLfgPost(saved); addXP(XP_EVENTS.post,'Broadcast LFG'); return; }
+    toast('⚠️','Broadcast failed','COULD NOT REACH THE SERVER — POSTED LOCALLY INSTEAD');
+  }
+  addLfgPost({game:postGameSel,title:goal,tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins,expiresAt:Date.now()+mins*60000});
+  addXP(XP_EVENTS.post,'Broadcast LFG');
 };
 
 /* ================= OVERLAYS ================= */
@@ -500,6 +755,7 @@ function pickCloud(id, opts, selArr, max=4){
 function onboardOpen(edit=false){
   OB.step=1; obShow();
   $('obName').value = edit? S.name : '';
+  $('obDiscord').value = S.discord || '';
   $('avPick').innerHTML='';
   OB.avatars.forEach(a=>{
     const d=el(`<div class="av ${a===S.avatar?'sel':''}" tabindex="0" role="button">${a}</div>`);
@@ -519,11 +775,20 @@ function obShow(){
 }
 $('obBack').onclick=()=>{ OB.step--; obShow(); };
 $('obNext').onclick=()=>{
-  if(OB.step===1){ const n=$('obName').value.trim(); if(n) S.name=n; }
+  if(OB.step===1){
+    const n=$('obName').value.trim();
+    if(n){
+      if(hasBlockedWord(n)){ toast('🚫','Callsign blocked','PICK SOMETHING ELSE'); return; }
+      S.name=n;
+    }
+    S.discord = $('obDiscord').value.trim().replace(/^@/,'').slice(0,37);
+  }
   if(OB.step<3){ OB.step++; obShow(); return; }
+  S.onboarded = true;
   closeOv('onboardOv'); renderProfile(); renderRecs();
   toast('🪪','Gamer Card deployed',`WELCOME, ${S.name.toUpperCase()} — MATCHMAKING ENGINE CALIBRATED`);
   unlockAch('first','First Link');
+  saveState(); syncProfileNow();
 };
 
 /* ================= MOOD ================= */
@@ -535,6 +800,7 @@ $('moodBtn').onclick=()=>{
   $('moodDot').style.background=MOODS[moodIdx][1];
   $('moodDot').style.boxShadow=`0 0 10px ${MOODS[moodIdx][1]}`;
   toast('🎭','Mood updated',`STATUS: ${MOODS[moodIdx][0].toUpperCase()} — MATCHES RETUNED`);
+  saveState();
 };
 
 /* ================= SOUND TOGGLE ================= */
@@ -546,17 +812,88 @@ $('enterBtn').onclick=()=>{
   Sfx.launch();
   $('landing').classList.add('gone');
   $('app').classList.add('on');
-  setTimeout(()=>onboardOpen(false), 700);
+  if(S.onboarded){
+    setTimeout(()=>toast('👋','Welcome back',`${S.name.toUpperCase()} — LEVEL ${S.level} — MATCHMAKING RESUMED`), 500);
+  } else {
+    setTimeout(()=>onboardOpen(false), 700);
+  }
 };
 
-/* ================= AMBIENT SIM ================= */
+/* ================= AUTH / BACKEND ================= */
+$('discordBtn').onclick=()=>Backend.signInWithDiscord();
+$('signOutBtn').onclick=async ()=>{
+  await Backend.signOut();
+  try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+  location.reload();
+};
+function applyProfileRow(row){
+  S.name=row.name; S.avatar=row.avatar; S.games=row.games||[]; S.langs=row.langs||[];
+  S.styles=row.styles||[]; S.goals=row.goals||[]; S.level=row.level; S.xp=row.xp; S.xpNeed=row.xp_need;
+  S.quests=row.quests||{}; S.achievements=new Set(row.achievements&&row.achievements.length?row.achievements:['first']);
+  S.onboarded=!!row.onboarded; S.discord=row.discord_handle||''; moodIdx = row.mood_idx||0;
+}
+
+/* ================= AMBIENT SIM =================
+   demo-mode flavor only: real deployments get real events from the
+   backend, so the fake ones stay off there (and while tab is hidden) */
 setInterval(()=>{
-  if(!$('app').classList.contains('on')) return;
+  if(!$('app').classList.contains('on') || document.hidden || Backend.enabled) return;
   const evts=[['🟢','Vex is online','VALORANT · IMMORTAL 1'],['📡','New LFG match','DESTINY 2 RAID — 92% FIT FOR YOUR GOALS'],['🏆','Roster slot opened','MUMBAI ASCENSION CUP NEEDS A SMOKES MAIN']];
   const e=evts[Math.floor(Math.random()*evts.length)];
   toast(e[0],e[1],e[2]);
 }, 45000);
 
 /* ================= INIT ================= */
-renderXP(); renderRecs(); renderFriends(); renderQuests(); renderTourMini();
-renderLfgFilters(); renderLfg(); renderMissions(); renderHubs(); renderTours(); renderProfile(); renderDeck();
+async function initApp(){
+  loadState();
+
+  if(Backend.enabled){
+    await Backend.init();
+    const user = Backend.currentUser();
+    if(user){
+      const row = await Backend.loadProfile(user.id);
+      if(row) applyProfileRow(row);
+      else S.name = user.user_metadata?.full_name || user.user_metadata?.name || S.name;
+      $('signOutBtn').style.display='inline-block';
+    } else {
+      $('discordBtn').style.display='inline-flex';
+      $('enterBtn').classList.add('btn-guest-alt');
+      $('enterBtn').textContent='CONTINUE AS GUEST';
+    }
+    // the OAuth callback can deliver the session after getSession() resolves;
+    // keep the auth UI honest whenever it lands
+    Backend.onAuthChange(sess=>{
+      const signedIn = !!(sess && sess.user);
+      $('signOutBtn').style.display = signedIn ? 'inline-block' : 'none';
+      $('discordBtn').style.display = signedIn ? 'none' : 'inline-flex';
+      if(signedIn){ $('enterBtn').classList.remove('btn-guest-alt'); $('enterBtn').textContent='ENTER THE ARENA'; }
+    });
+    Backend.fetchLfgPosts().then(posts=>{ posts.reverse().forEach(addLfgPost); });
+    Backend.subscribeLfg(post=>{
+      addLfgPost(post);
+      if(post.author && post.author!==S.name) toast('📡','New LFG match',`${post.game.toUpperCase()} — ${post.title.toUpperCase()}`);
+    }, updateLfgPost);
+    Backend.joinPresence(S.name, count=>{
+      $('presenceBadge').style.display='inline-flex';
+      $('presenceCount').textContent = count;
+    });
+    Backend.fetchProfiles(user ? user.id : null).then(profiles=>{
+      REAL_PROFILES = profiles;
+      DECK = profiles.length ? profiles.map(profileToSwipeCard) : SWIPES;
+      deckIdx = 0;
+      renderRecs(); renderDeck();
+    });
+  }
+
+  renderXP(); renderRecs(); renderFriends(); renderQuests(); renderTourMini();
+  renderLfgFilters(); renderLfg(); renderMissions(); renderHubs(); renderCarousel(); renderTours(); renderProfile(); renderDeck();
+  gcRestart();
+  $('moodTxt').textContent=MOODS[moodIdx][0];
+  $('moodDot').style.background=MOODS[moodIdx][1];
+  $('moodDot').style.boxShadow=`0 0 10px ${MOODS[moodIdx][1]}`;
+}
+initApp();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
