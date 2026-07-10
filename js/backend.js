@@ -99,13 +99,27 @@ const Backend = (() => {
     }catch(e){ console.warn('[backend] insertLfgPost failed', e); return null; }
   }
 
-  function subscribeLfgInserts(onInsert){
+  function subscribeLfg(onInsert, onUpdate){
     if(!enabled) return;
     lfgChannel = client.channel('lfg-feed')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lfg_posts' }, payload => {
         onInsert(rowToPost(payload.new));
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'lfg_posts' }, payload => {
+        if(onUpdate) onUpdate(rowToPost(payload.new));
+      })
       .subscribe();
+  }
+
+  async function joinLfgPost(postId){
+    if(!enabled) return null;
+    if(!currentUser()) return null;
+    try{
+      const { data, error } = await client.rpc('join_lfg', { post_id: postId });
+      if(error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return row ? rowToPost(row) : null; // null = post full or expired
+    }catch(e){ console.warn('[backend] joinLfgPost failed', e); return null; }
   }
 
   async function fetchProfiles(excludeId, limit=20){
@@ -158,7 +172,7 @@ const Backend = (() => {
   return {
     get enabled(){ return enabled; },
     init, onAuthChange, currentUser, signInWithDiscord, signOut,
-    loadProfile, saveProfile, fetchLfgPosts, insertLfgPost, subscribeLfgInserts, joinPresence,
+    loadProfile, saveProfile, fetchLfgPosts, insertLfgPost, subscribeLfg, joinLfgPost, joinPresence,
     fetchProfiles, fetchEndorsementCounts, insertEndorsement
   };
 })();

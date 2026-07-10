@@ -192,6 +192,24 @@ function go(v){
 }
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));
 
+/* ================= HOTKEYS =================
+   1–7 jump between views, Esc closes the top overlay — standard game-UI
+   muscle memory. Disabled while typing or during onboarding. */
+const VIEW_KEYS=['dash','lfg','missions','discover','hubs','tours','profile'];
+document.querySelectorAll('.nav-btn').forEach((b,i)=>{
+  if(i<VIEW_KEYS.length) b.insertAdjacentHTML('beforeend', `<span class="kbd">${i+1}</span>`);
+});
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    const open=[...document.querySelectorAll('.overlay.on')].pop();
+    if(open && open.id!=='onboardOv'){ if(open.id==='roomOv') closeRoom(); else closeOv(open.id); }
+    return;
+  }
+  if(e.target.matches('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(!$('app').classList.contains('on') || document.querySelector('.overlay.on')) return;
+  if(/^[1-7]$/.test(e.key)) go(VIEW_KEYS[+e.key-1]);
+});
+
 /* ================= LANDING: particles + neon rain + parallax ================= */
 (function(){
   const cv = $('landingCanvas'), cx = cv.getContext('2d');
@@ -347,7 +365,8 @@ function renderLfgFilters(){
   const cats=['All',...new Set(LFG.map(p=>p.game))];
   $('lfgFilters').innerHTML='';
   cats.forEach(c=>{
-    const b=el(`<button class="chip ${c===lfgFilter?'sel':''}">${c}</button>`);
+    const n = c==='All' ? LFG.length : LFG.filter(p=>p.game===c).length;
+    const b=el(`<button class="chip ${c===lfgFilter?'sel':''}">${c} <span class="chip-n">${n}</span></button>`);
     b.onclick=()=>{lfgFilter=c;renderLfgFilters();renderLfg();};
     $('lfgFilters').appendChild(b);
   });
@@ -367,9 +386,25 @@ function renderLfg(){
         <div class="slots">${Array.from({length:p.slots},(_,k)=>`<i class="${k<p.filled?'fill':''}"></i>`).join('')}</div>
         <button class="btn sm primary">JOIN SQUAD</button>
       </div></div>`);
-    card.querySelector('.btn').onclick=()=>openRoom(p);
+    card.querySelector('.btn').onclick=()=>joinSquad(p);
     list.appendChild(card);
   });
+}
+function updateLfgPost(post){
+  const i = LFG.findIndex(x=>x.id && x.id===post.id);
+  if(i<0) return;
+  LFG[i] = Object.assign(LFG[i], post);
+  renderLfg();
+}
+async function joinSquad(p){
+  if(p.id && Backend.enabled && Backend.currentUser()){
+    const updated = await Backend.joinLfgPost(p.id);
+    if(updated) updateLfgPost(updated);
+    else if(p.filled>=p.slots){ toast('⚠️','Squad full','THIS ONE FILLED UP — SCAN FOR ANOTHER'); return; }
+  } else if(p.filled < p.slots){
+    p.filled++; renderLfg();
+  }
+  openRoom(p);
 }
 /* live countdowns — derived from each post's absolute expiry, so
    re-renders can't reset them; expired posts are pruned from the feed */
@@ -522,7 +557,7 @@ function openEndorsePicker(targetId, targetName){
     const c=el(`<button class="chip">${esc(trait)}</button>`);
     c.onclick=async ()=>{
       const ok = await Backend.insertEndorsement(targetId, trait);
-      if(ok){ toast('🤝','Endorsement sent',`${trait.toUpperCase()} — GIVEN TO ${targetName.toUpperCase()}`); closeOv('endorseOv'); }
+      if(ok){ toast('🤝','Endorsement sent',`${trait.toUpperCase()} — GIVEN TO ${targetName.toUpperCase()}`); completeQuest('q2'); closeOv('endorseOv'); }
       else toast('⚠️','Could not send','TRY AGAIN IN A MOMENT');
     };
     $('endorseTraits').appendChild(c);
@@ -789,10 +824,10 @@ async function initApp(){
       if(signedIn){ $('enterBtn').classList.remove('btn-guest-alt'); $('enterBtn').textContent='ENTER THE ARENA'; }
     });
     Backend.fetchLfgPosts().then(posts=>{ posts.reverse().forEach(addLfgPost); });
-    Backend.subscribeLfgInserts(post=>{
+    Backend.subscribeLfg(post=>{
       addLfgPost(post);
       if(post.author && post.author!==S.name) toast('📡','New LFG match',`${post.game.toUpperCase()} — ${post.title.toUpperCase()}`);
-    });
+    }, updateLfgPost);
     Backend.joinPresence(S.name, count=>{
       $('presenceBadge').style.display='inline-flex';
       $('presenceCount').textContent = count;

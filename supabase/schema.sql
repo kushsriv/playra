@@ -82,6 +82,27 @@ create policy "users can delete their own lfg posts"
 
 create index if not exists lfg_posts_expires_at_idx on public.lfg_posts (expires_at);
 
+-- ============ JOINING ============
+-- Joining someone else's post can't be a plain UPDATE (RLS restricts that
+-- to the owner), so it goes through a definer function that increments the
+-- filled count atomically and never past the slot cap or an expired post.
+create or replace function public.join_lfg(post_id uuid)
+returns setof public.lfg_posts
+language sql
+security definer
+set search_path = public
+as $$
+  update public.lfg_posts
+     set filled = least(slots, filled + 1)
+   where id = post_id
+     and expires_at > now()
+     and filled < slots
+  returning *;
+$$;
+
+revoke all on function public.join_lfg(uuid) from public;
+grant execute on function public.join_lfg(uuid) to authenticated;
+
 -- ============ ENDORSEMENTS ============
 -- One row per (endorser, target, trait). A player can give the same trait
 -- to the same target only once — re-endorsing just no-ops (see the unique
