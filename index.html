@@ -275,6 +275,7 @@
       <input class="f-input" id="obDiscord" maxlength="37" placeholder="e.g. nightraven" autocomplete="off">
       <label class="f-label">Avatar core</label>
       <div class="av-pick" id="avPick"></div>
+      <p class="privacy-note">🔒 Your callsign and games are visible to everyone. Your Discord handle is only ever shown to squadmates who ready up with you in the same room — never posted publicly.</p>
     </div>
 
     <div id="obStep2" style="display:none">
@@ -342,6 +343,19 @@
     <div class="chip-cloud" id="endorseTraits"></div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeOv('endorseOv')">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ REPORT MODAL ============ -->
+<div class="overlay" id="reportOv">
+  <div class="panel modal" style="max-width:420px;--accent:var(--danger)">
+    <div class="eyebrow" style="margin-bottom:14px;--accent:var(--danger);color:var(--danger)">FLAG A PROBLEM</div>
+    <h2>Report <span id="reportTarget">Operator</span></h2>
+    <p class="m-sub">This goes to manual review, not a public callout. Pick what happened.</p>
+    <div class="chip-cloud" id="reportReasons"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeOv('reportOv')">CANCEL</button>
     </div>
   </div>
 </div>

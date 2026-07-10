@@ -136,6 +136,110 @@ create policy "authenticated users can give endorsements"
   to authenticated
   with check (auth.uid() = from_user);
 
+-- ============ RATE LIMITING ============
+-- Defense in depth: the client already throttles LFG broadcasts in the
+-- UI (a posting-in-flight guard), but nothing stops a script hitting the
+-- REST API directly. Caps each user to 5 LFG posts per rolling 60s.
+create or replace function public.enforce_lfg_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  recent_count int;
+begin
+  select count(*) into recent_count
+    from public.lfg_posts
+   where user_id = new.user_id
+     and created_at > now() - interval '60 seconds';
+  if recent_count >= 5 then
+    raise exception 'RATE_LIMIT: too many LFG posts, slow down';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists lfg_rate_limit_trigger on public.lfg_posts;
+create trigger lfg_rate_limit_trigger
+  before insert on public.lfg_posts
+  for each row execute function public.enforce_lfg_rate_limit();
+
+-- ============ SERVER-SIDE MODERATION ============
+-- Mirrors js/app.js's BLOCKLIST. This is defense in depth so a client
+-- that bypasses the UI (or hits the REST API directly) can't post
+-- around the client-side check — NOT a substitute for a real moderation
+-- pipeline (Perspective API etc. — see DEPLOYMENT_ROADMAP.md Phase 1.2).
+-- It only catches exact-word matches, same limitation as the client list.
+create or replace function public.contains_blocked_word(input text)
+returns boolean
+language sql
+immutable
+as $$
+  select input ~* '\y(fuck|shit|bitch|nigger|faggot|cunt|asshole|whore|slut|retard|rape)\y';
+$$;
+
+create or replace function public.enforce_clean_lfg_title()
+returns trigger
+language plpgsql
+as $$
+begin
+  if public.contains_blocked_word(new.title) then
+    raise exception 'MODERATION: LFG title contains blocked language';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists lfg_moderation_trigger on public.lfg_posts;
+create trigger lfg_moderation_trigger
+  before insert or update on public.lfg_posts
+  for each row execute function public.enforce_clean_lfg_title();
+
+create or replace function public.enforce_clean_profile_name()
+returns trigger
+language plpgsql
+as $$
+begin
+  if public.contains_blocked_word(new.name) then
+    raise exception 'MODERATION: callsign contains blocked language';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profile_moderation_trigger on public.profiles;
+create trigger profile_moderation_trigger
+  before insert or update on public.profiles
+  for each row execute function public.enforce_clean_profile_name();
+
+-- ============ REPORTS ============
+-- Minimum viable safety valve: captures reports for manual review in the
+-- Supabase dashboard. No automated action (auto-hide, auto-ban) yet —
+-- see DEPLOYMENT_ROADMAP.md Phase 1.3 for what a fuller version needs.
+create table if not exists public.reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter_id uuid not null references public.profiles(id) on delete cascade,
+  reported_id uuid not null references public.profiles(id) on delete cascade,
+  context text not null default '',
+  reason text not null,
+  created_at timestamptz not null default now(),
+  constraint no_self_report check (reporter_id <> reported_id)
+);
+
+alter table public.reports enable row level security;
+
+drop policy if exists "users can file reports" on public.reports;
+create policy "users can file reports"
+  on public.reports for insert
+  to authenticated
+  with check (auth.uid() = reporter_id);
+
+drop policy if exists "users can see their own filed reports" on public.reports;
+create policy "users can see their own filed reports"
+  on public.reports for select
+  using (auth.uid() = reporter_id);
+
 -- ============ REALTIME ============
 -- Broadcast INSERT/UPDATE/DELETE on lfg_posts to subscribed clients.
 alter publication supabase_realtime add table public.lfg_posts;

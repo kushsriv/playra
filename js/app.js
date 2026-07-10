@@ -150,6 +150,7 @@ const ACH = [
   {id:'trophy', ico:'🏆', nm:'Tournament Winner', ds:'LOCKED'}
 ];
 const ENDORSE = [['Communication',96],['Clutch',88],['Leadership',82],['Patient',91],['Funny',77],['Teacher',69],['Reliable',94],['No Toxicity',99]];
+const REPORT_REASONS = ['Harassment','Toxicity / slurs','Spam','Fake profile','Cheating claims','Other'];
 
 /* ================= HELPERS ================= */
 const $ = id => document.getElementById(id);
@@ -320,13 +321,17 @@ function renderRecs(){
       <div style="display:flex;gap:8px">
         <button class="btn sm primary invite-btn" style="flex:1">INVITE TO SQUAD</button>
         <button class="btn sm ghost endorse-btn" style="${r.id?'':'display:none'}">ENDORSE</button>
+        <button class="btn sm ghost report-btn" title="Report" style="${r.id?'':'display:none'};color:var(--danger);flex:none;padding:7px 10px">⚑</button>
       </div>
     </div>`);
     card.querySelector('.av').textContent = (r.n[0]||'?').toUpperCase();
     card.querySelector('.rn').textContent = r.n;
     card.querySelector('.rr').textContent = r.rank;
     card.querySelector('.invite-btn').onclick=()=>inviteRec(r.n);
-    if(r.id) card.querySelector('.endorse-btn').onclick=()=>openEndorsePicker(r.id, r.n);
+    if(r.id){
+      card.querySelector('.endorse-btn').onclick=()=>openEndorsePicker(r.id, r.n);
+      card.querySelector('.report-btn').onclick=()=>openReportPicker(r.id, r.n, 'Reported from Command Center recs');
+    }
     $('recGrid').appendChild(card);
   });
 }
@@ -566,6 +571,20 @@ function openEndorsePicker(targetId, targetName){
   });
   openOv('endorseOv');
 }
+function openReportPicker(targetId, targetName, context){
+  $('reportTarget').textContent = targetName;
+  $('reportReasons').innerHTML='';
+  REPORT_REASONS.forEach(reason=>{
+    const c=el(`<button class="chip">${esc(reason)}</button>`);
+    c.onclick=async ()=>{
+      const ok = await Backend.insertReport(targetId, reason, context||'');
+      if(ok){ toast('🚩','Report filed',`${targetName.toUpperCase()} — SENT FOR REVIEW`); closeOv('reportOv'); }
+      else toast('⚠️','Could not send','TRY AGAIN IN A MOMENT');
+    };
+    $('reportReasons').appendChild(c);
+  });
+  openOv('reportOv');
+}
 function renderAch(){
   $('achGrid').innerHTML='';
   ACH.forEach(a=>{
@@ -634,9 +653,15 @@ let roomTimer=null, roomIsLive=false, roomLocked=false;
 function memberCard(m, isSelf){
   const card = el(`<div class="rm ${m.ready?'ready':''}">
     <div class="av"></div><div class="rm-n"></div><div class="rm-s">${m.ready?'READY':'STANDBY'}</div>
-    <div class="rm-d" style="display:none"></div></div>`);
+    <div class="rm-d" style="display:none"></div>
+    <button class="rm-report" title="Report" style="display:none">⚑</button></div>`);
   card.querySelector('.av').textContent = m.avatar || (m.name||'?')[0].toUpperCase();
   card.querySelector('.rm-n').textContent = (m.name||'Operator') + (isSelf?' (you)':'');
+  if(!isSelf && !String(m.key||'').startsWith('guest-')){
+    const rBtn = card.querySelector('.rm-report');
+    rBtn.style.display='inline-block';
+    rBtn.onclick=()=>openReportPicker(m.key, m.name||'Operator', 'Reported from squad room');
+  }
   return card;
 }
 function renderRoomMembers(members, selfKey){
@@ -724,6 +749,8 @@ $('postSend').onclick=async ()=>{
     postSending=true; $('postSend').disabled=true;
     const saved = await Backend.insertLfgPost({game:postGameSel,title:goal,tags:['Mic required',postExpSel+' window'],slots:5,filled:1,mins,authorName:S.name});
     postSending=false; $('postSend').disabled=false;
+    if(saved==='rate_limited'){ toast('🚫','Slow down','TOO MANY POSTS — WAIT A MINUTE AND TRY AGAIN'); return; }
+    if(saved==='blocked'){ toast('🚫','Post blocked','THE SERVER REJECTED THIS TITLE'); return; }
     if(saved){ addLfgPost(saved); addXP(XP_EVENTS.post,'Broadcast LFG'); return; }
     toast('⚠️','Broadcast failed','COULD NOT REACH THE SERVER — POSTED LOCALLY INSTEAD');
   }

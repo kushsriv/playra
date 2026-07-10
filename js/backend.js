@@ -92,6 +92,17 @@ const Backend = (() => {
     }catch(e){ console.warn('[backend] fetchLfgPosts failed', e); return []; }
   }
 
+  // Server-side triggers (rate limit + moderation) raise a Postgres
+  // exception with a recognizable prefix; surface those as distinct
+  // return values so the UI can tell "you're posting too fast" apart
+  // from "network hiccup, fall back to a local-only post."
+  function classifyDbError(e){
+    const msg = String(e?.message || '');
+    if(msg.includes('RATE_LIMIT')) return 'rate_limited';
+    if(msg.includes('MODERATION')) return 'blocked';
+    return null;
+  }
+
   async function insertLfgPost({ game, title, tags, slots, filled, mins, authorName }){
     if(!enabled) return null;
     const user = currentUser();
@@ -103,7 +114,21 @@ const Backend = (() => {
         .select().single();
       if(error) throw error;
       return rowToPost(data);
-    }catch(e){ console.warn('[backend] insertLfgPost failed', e); return null; }
+    }catch(e){
+      console.warn('[backend] insertLfgPost failed', e);
+      return classifyDbError(e) || null;
+    }
+  }
+
+  async function insertReport(reportedId, reason, context){
+    if(!enabled) return false;
+    const user = currentUser();
+    if(!user || user.id === reportedId) return false;
+    try{
+      const { error } = await client.from('reports').insert({ reporter_id: user.id, reported_id: reportedId, reason, context: context||'' });
+      if(error) throw error;
+      return true;
+    }catch(e){ console.warn('[backend] insertReport failed', e); return false; }
   }
 
   function subscribeLfg(onInsert, onUpdate){
@@ -211,7 +236,7 @@ const Backend = (() => {
     get enabled(){ return enabled; },
     init, onAuthChange, currentUser, signInWithDiscord, signOut,
     loadProfile, saveProfile, fetchLfgPosts, insertLfgPost, subscribeLfg, joinLfgPost, joinPresence,
-    fetchProfiles, fetchEndorsementCounts, insertEndorsement,
+    fetchProfiles, fetchEndorsementCounts, insertEndorsement, insertReport,
     joinRoom, setRoomReady, leaveRoom
   };
 })();
