@@ -79,13 +79,13 @@ function loadState(){
 const GAMES = [
   {n:'Valorant', ab:'VA', c:'#FF4655', glow:'rgba(255,70,85,.28)', online:'41.2K', tag:'TACTICAL FPS', art:'https://media.valorant-api.com/maps/7eaecc1b-4337-bbf6-6ab9-04b8f06b3319/splash.png'},
   {n:'Minecraft', ab:'MC', c:'#5FBB4E', glow:'rgba(95,187,78,.26)', online:'38.9K', tag:'SANDBOX', art:''},
-  {n:'CS2', ab:'CS', c:'#F5A623', glow:'rgba(245,166,35,.26)', online:'29.4K', tag:'TACTICAL FPS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_hero.jpg'},
-  {n:'Fortnite', ab:'FN', c:'#8B5CF6', glow:'rgba(139,92,246,.3)', online:'33.1K', tag:'BATTLE ROYALE', art:'https://fortnite-api.com/images/map.png'},
+  {n:'CS2', ab:'CS', c:'#F5A623', glow:'rgba(245,166,35,.26)', online:'29.4K', tag:'TACTICAL FPS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/730/header.jpg'},
+  {n:'Fortnite', ab:'FN', c:'#8B5CF6', glow:'rgba(139,92,246,.3)', online:'33.1K', tag:'BATTLE ROYALE', art:''},
   {n:'League of Legends', ab:'LoL', c:'#00E5FF', glow:'rgba(0,229,255,.26)', online:'52.7K', tag:'MOBA', art:'https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Jinx_0.jpg'},
-  {n:'Rocket League', ab:'RL', c:'#3DFFA0', glow:'rgba(61,255,160,.26)', online:'12.3K', tag:'SPORTS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/252950/library_hero.jpg'},
-  {n:'Apex Legends', ab:'AP', c:'#FF3D81', glow:'rgba(255,61,129,.28)', online:'18.8K', tag:'BATTLE ROYALE', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/1172470/library_hero.jpg'},
-  {n:'FIFA', ab:'FC', c:'#57F6FF', glow:'rgba(87,246,255,.26)', online:'9.6K', tag:'SPORTS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/2195250/library_hero.jpg'},
-  {n:'Destiny 2', ab:'D2', c:'#FFB020', glow:'rgba(255,176,32,.26)', online:'7.2K', tag:'LOOTER', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/1085660/library_hero.jpg'}
+  {n:'Rocket League', ab:'RL', c:'#3DFFA0', glow:'rgba(61,255,160,.26)', online:'12.3K', tag:'SPORTS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/252950/header.jpg'},
+  {n:'Apex Legends', ab:'AP', c:'#FF3D81', glow:'rgba(255,61,129,.28)', online:'18.8K', tag:'BATTLE ROYALE', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/1172470/header.jpg'},
+  {n:'FIFA', ab:'FC', c:'#57F6FF', glow:'rgba(87,246,255,.26)', online:'9.6K', tag:'SPORTS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/2195250/header.jpg'},
+  {n:'Destiny 2', ab:'D2', c:'#FFB020', glow:'rgba(255,176,32,.26)', online:'7.2K', tag:'LOOTER', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/1085660/header.jpg'}
 ];
 /* art is hot-linked from publisher-operated CDNs (Steam app art, Riot's
    Data Dragon, public game APIs) rather than committed to the repo.
