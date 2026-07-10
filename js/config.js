@@ -3,8 +3,13 @@
    Discord login, persistent LFG posts, and realtime presence.
    Leave them blank to run PLAYRA in local/guest mode — everything still
    works, it just stays on this device (localStorage only).
+
+   This file is git-ignored — edit it locally for local dev, it won't be
+   committed. Production deploys get their real values injected by
+   .github/workflows/deploy.yml from repo secrets (Settings → Secrets and
+   variables → Actions → SUPABASE_URL / SUPABASE_ANON_KEY).
    See SETUP.md for the full walkthrough. */
 window.PLAYRA_CONFIG = {
-  SUPABASE_URL: 'https://peztbwfqtztpnzgmshkf.supabase.co',
-  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlenRid2ZxdHp0cG56Z21zaGtmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM2NTEwNjgsImV4cCI6MjA5OTIyNzA2OH0.Z6-LGZITyxWIOYkKYszRJ56v8wT7iVqe8KoeWryAGhs'
+  SUPABASE_URL: '',
+  SUPABASE_ANON_KEY: ''
 };
