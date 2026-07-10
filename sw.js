@@ -1,4 +1,4 @@
-const CACHE = 'playra-v2';
+const CACHE = 'playra-v3';
 const SHELL = ['./', './index.html', './css/styles.css', './js/config.js', './js/backend.js', './js/app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {

@@ -77,16 +77,28 @@ function loadState(){
 
 /* ================= DATA ================= */
 const GAMES = [
-  {n:'Valorant', ab:'VA', c:'#FF4655', glow:'rgba(255,70,85,.28)', online:'41.2K', tag:'TACTICAL FPS'},
-  {n:'Minecraft', ab:'MC', c:'#5FBB4E', glow:'rgba(95,187,78,.26)', online:'38.9K', tag:'SANDBOX'},
-  {n:'CS2', ab:'CS', c:'#F5A623', glow:'rgba(245,166,35,.26)', online:'29.4K', tag:'TACTICAL FPS'},
-  {n:'Fortnite', ab:'FN', c:'#8B5CF6', glow:'rgba(139,92,246,.3)', online:'33.1K', tag:'BATTLE ROYALE'},
-  {n:'League of Legends', ab:'LoL', c:'#00E5FF', glow:'rgba(0,229,255,.26)', online:'52.7K', tag:'MOBA'},
-  {n:'Rocket League', ab:'RL', c:'#3DFFA0', glow:'rgba(61,255,160,.26)', online:'12.3K', tag:'SPORTS'},
-  {n:'Apex Legends', ab:'AP', c:'#FF3D81', glow:'rgba(255,61,129,.28)', online:'18.8K', tag:'BATTLE ROYALE'},
-  {n:'FIFA', ab:'FC', c:'#57F6FF', glow:'rgba(87,246,255,.26)', online:'9.6K', tag:'SPORTS'},
-  {n:'Destiny 2', ab:'D2', c:'#FFB020', glow:'rgba(255,176,32,.26)', online:'7.2K', tag:'LOOTER'}
+  {n:'Valorant', ab:'VA', c:'#FF4655', glow:'rgba(255,70,85,.28)', online:'41.2K', tag:'TACTICAL FPS', art:'https://media.valorant-api.com/maps/7eaecc1b-4337-bbf6-6ab9-04b8f06b3319/splash.png'},
+  {n:'Minecraft', ab:'MC', c:'#5FBB4E', glow:'rgba(95,187,78,.26)', online:'38.9K', tag:'SANDBOX', art:''},
+  {n:'CS2', ab:'CS', c:'#F5A623', glow:'rgba(245,166,35,.26)', online:'29.4K', tag:'TACTICAL FPS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/730/library_hero.jpg'},
+  {n:'Fortnite', ab:'FN', c:'#8B5CF6', glow:'rgba(139,92,246,.3)', online:'33.1K', tag:'BATTLE ROYALE', art:'https://fortnite-api.com/images/map.png'},
+  {n:'League of Legends', ab:'LoL', c:'#00E5FF', glow:'rgba(0,229,255,.26)', online:'52.7K', tag:'MOBA', art:'https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Jinx_0.jpg'},
+  {n:'Rocket League', ab:'RL', c:'#3DFFA0', glow:'rgba(61,255,160,.26)', online:'12.3K', tag:'SPORTS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/252950/library_hero.jpg'},
+  {n:'Apex Legends', ab:'AP', c:'#FF3D81', glow:'rgba(255,61,129,.28)', online:'18.8K', tag:'BATTLE ROYALE', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/1172470/library_hero.jpg'},
+  {n:'FIFA', ab:'FC', c:'#57F6FF', glow:'rgba(87,246,255,.26)', online:'9.6K', tag:'SPORTS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/2195250/library_hero.jpg'},
+  {n:'Destiny 2', ab:'D2', c:'#FFB020', glow:'rgba(255,176,32,.26)', online:'7.2K', tag:'LOOTER', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/1085660/library_hero.jpg'}
 ];
+/* art is hot-linked from publisher-operated CDNs (Steam app art, Riot's
+   Data Dragon, public game APIs) rather than committed to the repo.
+   Renderers treat it as progressive enhancement — on any load failure the
+   <img> is removed and the tile falls back to its accent-gradient look. */
+function attachArt(container, g, cls){
+  if(!g.art) return;
+  const img = document.createElement('img');
+  img.className = cls; img.src = g.art; img.alt = ''; img.loading = 'lazy';
+  img.onerror = () => { img.remove(); container.classList.remove('has-art'); };
+  container.classList.add('has-art');
+  container.prepend(img);
+}
 const gameBy = n => GAMES.find(g=>g.n===n) || GAMES[0];
 
 let LFG = [
@@ -140,7 +152,7 @@ const QUESTS = [
   {id:'q4', name:'Invite a 90%+ compatible duo', xp:20}
 ];
 const ACH = [
-  {id:'first', ico:'🎖️', nm:'First Link', ds:'JOINED GAMELINK'},
+  {id:'first', ico:'🎖️', nm:'First Link', ds:'JOINED PLAYRA'},
   {id:'clutch', ico:'⚡', nm:'First Clutch', ds:'ENDORSED: CLUTCH ×1'},
   {id:'owl', ico:'🌙', nm:'Night Owl', ds:'10 SESSIONS AFTER 1AM'},
   {id:'squad', ico:'🛡️', nm:'Squad Leader', ds:'LEAD 5 READY CHECKS'},
@@ -471,6 +483,7 @@ function renderCarousel(){
       </div></div>`);
     s.querySelector('.gc-enter').onclick=e=>{ e.stopPropagation(); selectHub(g); };
     s.onclick=()=>selectHub(g);
+    attachArt(s, g, 'gc-art');
     track.appendChild(s);
   });
   $('gcDots').innerHTML='';
@@ -501,6 +514,7 @@ function renderHubs(){
       <div class="h-name">${g.n}</div>
       <div class="h-stat"><b>${g.online}</b> ONLINE · ${g.tag}</div></div>`);
     c.onclick=()=>selectHub(g);
+    attachArt(c, g, 'hub-art');
     $('hubGrid').appendChild(c);
   });
 }
