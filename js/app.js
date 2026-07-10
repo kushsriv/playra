@@ -821,11 +821,13 @@ $('enterBtn').onclick=()=>{
 
 /* ================= AUTH / BACKEND ================= */
 $('discordBtn').onclick=()=>Backend.signInWithDiscord();
-$('signOutBtn').onclick=async ()=>{
+async function doSignOut(){
   await Backend.signOut();
   try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
   location.reload();
-};
+}
+$('signOutBtn').onclick=doSignOut;
+$('topSignOutBtn').onclick=doSignOut;
 function applyProfileRow(row){
   S.name=row.name; S.avatar=row.avatar; S.games=row.games||[]; S.langs=row.langs||[];
   S.styles=row.styles||[]; S.goals=row.goals||[]; S.level=row.level; S.xp=row.xp; S.xpNeed=row.xp_need;
@@ -855,18 +857,22 @@ async function initApp(){
       if(row) applyProfileRow(row);
       else S.name = user.user_metadata?.full_name || user.user_metadata?.name || S.name;
       $('signOutBtn').style.display='inline-block';
+      $('topSignOutBtn').style.display='inline-flex';
+      $('enterBtn').style.display='inline-flex';
     } else {
+      // Discord is the only way in when a backend exists — no guest
+      // shortcut, so a Gamer Card always maps to a real signed-in account
       $('discordBtn').style.display='inline-flex';
-      $('enterBtn').classList.add('btn-guest-alt');
-      $('enterBtn').textContent='CONTINUE AS GUEST';
+      $('enterBtn').style.display='none';
     }
     // the OAuth callback can deliver the session after getSession() resolves;
     // keep the auth UI honest whenever it lands
     Backend.onAuthChange(sess=>{
       const signedIn = !!(sess && sess.user);
       $('signOutBtn').style.display = signedIn ? 'inline-block' : 'none';
+      $('topSignOutBtn').style.display = signedIn ? 'inline-flex' : 'none';
       $('discordBtn').style.display = signedIn ? 'none' : 'inline-flex';
-      if(signedIn){ $('enterBtn').classList.remove('btn-guest-alt'); $('enterBtn').textContent='ENTER THE ARENA'; }
+      $('enterBtn').style.display = signedIn ? 'inline-flex' : 'none';
     });
     Backend.fetchLfgPosts().then(posts=>{ posts.reverse().forEach(addLfgPost); });
     Backend.subscribeLfg(post=>{
