@@ -242,7 +242,18 @@ create policy "users can see their own filed reports"
 
 -- ============ REALTIME ============
 -- Broadcast INSERT/UPDATE/DELETE on lfg_posts to subscribed clients.
-alter publication supabase_realtime add table public.lfg_posts;
+-- Postgres has no "ADD TABLE IF NOT EXISTS" for publications, so this
+-- wraps it in a block that swallows the "already a member" error —
+-- without this, re-running the script on a project where realtime was
+-- already enabled throws 42710 and (since Supabase's SQL Editor runs
+-- the whole paste as one implicit transaction) rolls back everything
+-- else in this file along with it, silently.
+do $$
+begin
+  alter publication supabase_realtime add table public.lfg_posts;
+exception when duplicate_object then
+  null;
+end $$;
 
 -- ============ HOUSEKEEPING ============
 -- Optional: a cron-free cleanup you can run periodically (Supabase → Database → Cron, or manually)
