@@ -68,8 +68,9 @@ const Backend = (() => {
   }
 
   function rowToPost(row){
-    const mins = Math.max(0, Math.round((new Date(row.expires_at) - Date.now()) / 60000));
-    return { id: row.id, game: row.game, title: row.title, tags: row.tags || [], slots: row.slots, filled: row.filled, mins, live: true, author: row.author_name };
+    const expiresAt = new Date(row.expires_at).getTime();
+    const mins = Math.max(0, Math.round((expiresAt - Date.now()) / 60000));
+    return { id: row.id, game: row.game, title: row.title, tags: row.tags || [], slots: row.slots, filled: row.filled, mins, expiresAt, live: true, author: row.author_name };
   }
 
   async function fetchLfgPosts(){

@@ -33,6 +33,16 @@ const XP_EVENTS = { join:40, ready:25, invite:20, quest:0, post:30, register:35,
 
 /* ================= PERSISTENCE ================= */
 const STORAGE_KEY = 'playra_state_v1';
+/* localStorage writes are cheap and happen immediately; the server upsert
+   is debounced so a burst of XP events becomes one network write */
+let profileSyncTimer=null;
+function syncProfileNow(){
+  if(profileSyncTimer){ clearTimeout(profileSyncTimer); profileSyncTimer=null; }
+  if(Backend.enabled && Backend.currentUser()){
+    S.moodIdx = typeof moodIdx==='number'?moodIdx:0;
+    Backend.saveProfile(S);
+  }
+}
 function saveState(){
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -42,10 +52,11 @@ function saveState(){
     }));
   }catch(e){}
   if(Backend.enabled && Backend.currentUser()){
-    S.moodIdx = typeof moodIdx==='number'?moodIdx:0;
-    Backend.saveProfile(S);
+    clearTimeout(profileSyncTimer);
+    profileSyncTimer=setTimeout(syncProfileNow, 1500);
   }
 }
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden && profileSyncTimer) syncProfileNow(); });
 function loadState(){
   let raw;
   try{ raw = localStorage.getItem(STORAGE_KEY); }catch(e){ return false; }
@@ -84,6 +95,9 @@ let LFG = [
   {game:'Apex Legends', title:'Ranked grind to Diamond — need entry fragger', tags:['Mumbai','Duo→Trio','Mic required','Plat+'], slots:3, filled:2, mins:21},
   {game:'Rocket League', title:'Champ 2s partner, rotation-first playstyle', tags:['Any region','No toxicity','C1–C3'], slots:2, filled:1, mins:44}
 ];
+/* every post carries an absolute expiry; countdowns derive from it so
+   re-renders can't reset them, and expired posts drop off the radar */
+LFG.forEach(p=>p.expiresAt = Date.now() + p.mins*60000);
 const MISSIONS = [
   {game:'Valorant', goal:'Reach Radiant before Episode ends', desc:'Immortal 3, 78 RR. Need a consistent duo — VOD review together twice a week.', diff:5, by:'Vex', rep:'4.9'},
   {game:'Minecraft', goal:'Hardcore Ender Dragon, zero deaths', desc:'Third attempt. Looking for one calm player who knows bastion routes.', diff:4, by:'Blocksmith', rep:'5.0'},
@@ -217,6 +231,8 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>
   const blips=[{r:.45,ang:.9,c:'#00E5FF'},{r:.7,ang:2.4,c:'#FF3D81'},{r:.85,ang:4.2,c:'#3DFFA0'},{r:.3,ang:5.4,c:'#FFB020'}];
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function draw(){
+    // don't burn frames while the dashboard is off-screen
+    if(!$('view-dash').classList.contains('on')){ requestAnimationFrame(draw); return; }
     cx.clearRect(0,0,440,440);
     cx.strokeStyle='rgba(0,229,255,.18)'; cx.lineWidth=1;
     [0.33,0.66,1].forEach(k=>{cx.beginPath();cx.arc(C,C,R*k*.92,0,7);cx.stroke();});
@@ -347,7 +363,7 @@ function renderLfg(){
       <div><div class="lfg-title">${esc(p.title)}${p.live?' <span class=\"tag lm\" style=\"margin-left:6px\">LIVE</span>':''}</div>
         <div class="lfg-meta"><span class="tag" style="color:${g.c};border-color:${g.c}55">${p.game.toUpperCase()}</span>${p.author?`<span class="tag">BY ${esc(p.author.toUpperCase())}</span>`:''}${p.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div></div>
       <div class="lfg-right">
-        <div class="countdown" data-mins="${p.mins}"><span class="cd-dot"></span><span class="cd-txt mono">--:--</span></div>
+        <div class="countdown" data-expires="${p.expiresAt||''}"><span class="cd-dot"></span><span class="cd-txt mono">--:--</span></div>
         <div class="slots">${Array.from({length:p.slots},(_,k)=>`<i class="${k<p.filled?'fill':''}"></i>`).join('')}</div>
         <button class="btn sm primary">JOIN SQUAD</button>
       </div></div>`);
@@ -355,14 +371,25 @@ function renderLfg(){
     list.appendChild(card);
   });
 }
-/* live countdowns */
+/* live countdowns — derived from each post's absolute expiry, so
+   re-renders can't reset them; expired posts are pruned from the feed */
 setInterval(()=>{
-  document.querySelectorAll('.countdown[data-mins]').forEach(c=>{
-    let s = c._sec ?? (+c.dataset.mins*60); s=Math.max(0,s-1); c._sec=s;
+  const now = Date.now();
+  document.querySelectorAll('.countdown[data-expires]').forEach(c=>{
+    const exp = +c.dataset.expires;
+    if(!exp) return;
+    const s = Math.max(0, Math.round((exp-now)/1000));
     const m=String(Math.floor(s/60)).padStart(2,'0'), ss=String(s%60).padStart(2,'0');
     c.querySelector('.cd-txt').textContent=`${m}:${ss}`;
     c.classList.toggle('crit', s<300);
   });
+  const live = LFG.filter(p=>!p.expiresAt || p.expiresAt > now);
+  if(live.length !== LFG.length){
+    LFG = live;
+    if(lfgFilter!=='All' && !LFG.some(p=>p.game===lfgFilter)) lfgFilter='All';
+    renderLfgFilters(); renderLfg();
+    $('lfgBadge').textContent = LFG.length+' LIVE';
+  }
 },1000);
 
 /* ================= MISSIONS ================= */
@@ -607,18 +634,22 @@ function addLfgPost(post){
   renderLfgFilters(); renderLfg();
   $('lfgBadge').textContent = LFG.length+' LIVE';
 }
+let postSending=false;
 $('postSend').onclick=async ()=>{
+  if(postSending) return;
   const goal=$('postGoal').value.trim();
   if(!goal){ toast('⚠️','Objective required','LEAD WITH THE GOAL — IT FILLS 3× FASTER'); return; }
   if(hasBlockedWord(goal)){ toast('🚫','Post blocked','KEEP LFG TITLES CLEAN — EDIT AND TRY AGAIN'); return; }
   const mins = {'15 min':15,'30 min':30,'1 hr':60,'3 hr':180}[postExpSel];
   $('postGoal').value=''; closeOv('postOv'); go('lfg');
   if(Backend.enabled && Backend.currentUser()){
+    postSending=true; $('postSend').disabled=true;
     const saved = await Backend.insertLfgPost({game:postGameSel,title:goal,tags:['Mic required',postExpSel+' window'],slots:5,filled:1,mins,authorName:S.name});
+    postSending=false; $('postSend').disabled=false;
     if(saved){ addLfgPost(saved); addXP(XP_EVENTS.post,'Broadcast LFG'); return; }
     toast('⚠️','Broadcast failed','COULD NOT REACH THE SERVER — POSTED LOCALLY INSTEAD');
   }
-  addLfgPost({game:postGameSel,title:goal,tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins});
+  addLfgPost({game:postGameSel,title:goal,tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins,expiresAt:Date.now()+mins*60000});
   addXP(XP_EVENTS.post,'Broadcast LFG');
 };
 
@@ -677,7 +708,7 @@ $('obNext').onclick=()=>{
   closeOv('onboardOv'); renderProfile(); renderRecs();
   toast('🪪','Gamer Card deployed',`WELCOME, ${S.name.toUpperCase()} — MATCHMAKING ENGINE CALIBRATED`);
   unlockAch('first','First Link');
-  saveState();
+  saveState(); syncProfileNow();
 };
 
 /* ================= MOOD ================= */
@@ -722,9 +753,11 @@ function applyProfileRow(row){
   S.onboarded=!!row.onboarded; moodIdx = row.mood_idx||0;
 }
 
-/* ================= AMBIENT SIM ================= */
+/* ================= AMBIENT SIM =================
+   demo-mode flavor only: real deployments get real events from the
+   backend, so the fake ones stay off there (and while tab is hidden) */
 setInterval(()=>{
-  if(!$('app').classList.contains('on')) return;
+  if(!$('app').classList.contains('on') || document.hidden || Backend.enabled) return;
   const evts=[['🟢','Vex is online','VALORANT · IMMORTAL 1'],['📡','New LFG match','DESTINY 2 RAID — 92% FIT FOR YOUR GOALS'],['🏆','Roster slot opened','MUMBAI ASCENSION CUP NEEDS A SMOKES MAIN']];
   const e=evts[Math.floor(Math.random()*evts.length)];
   toast(e[0],e[1],e[2]);
@@ -747,6 +780,14 @@ async function initApp(){
       $('enterBtn').classList.add('btn-guest-alt');
       $('enterBtn').textContent='CONTINUE AS GUEST';
     }
+    // the OAuth callback can deliver the session after getSession() resolves;
+    // keep the auth UI honest whenever it lands
+    Backend.onAuthChange(sess=>{
+      const signedIn = !!(sess && sess.user);
+      $('signOutBtn').style.display = signedIn ? 'inline-block' : 'none';
+      $('discordBtn').style.display = signedIn ? 'none' : 'inline-flex';
+      if(signedIn){ $('enterBtn').classList.remove('btn-guest-alt'); $('enterBtn').textContent='ENTER THE ARENA'; }
+    });
     Backend.fetchLfgPosts().then(posts=>{ posts.reverse().forEach(addLfgPost); });
     Backend.subscribeLfgInserts(post=>{
       addLfgPost(post);
