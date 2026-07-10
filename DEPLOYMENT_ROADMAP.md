@@ -48,9 +48,10 @@ to `main`. Full feature set:
 | Discord OAuth end-to-end on real infrastructure | ✅ **Confirmed** — fixed a missing repo-secrets step and a missing `email` OAuth scope to get here |
 | Redirect URL allow-listed in Supabase | ✅ Implied working — auth completes and returns to the app |
 | Server-side trust/safety (rate limit, moderation, reports) | ✅ **Shipped this session** — see Phase −1 |
-| **Re-run `schema.sql`** on your live Supabase project | ❗ **Required, not optional** — this session added the `reports` table and several trigger functions. None of it exists on your live database until you paste the updated `supabase/schema.sql` into the SQL Editor again. It's idempotent, safe to re-run. |
+| Re-run `schema.sql` on the live Supabase project | ✅ **Done** — first run hit a real bug (the realtime publication line wasn't idempotent and rolled back the whole script inside the SQL Editor's implicit transaction); fixed with a duplicate_object-swallowing DO block, re-run succeeded |
+| RLS actually enabled on all 4 tables (`profiles`/`lfg_posts`/`endorsements`/`reports`) | ✅ **Confirmed in dashboard** |
 | Rotate the old leaked anon key (from early git history) | ❓ **Still unconfirmed** — Settings → API Keys, confirm the *current* publishable key isn't the one that was ever committed |
-| RLS actually enabled on all tables (now 4: `profiles`/`lfg_posts`/`endorsements`/`reports`) | ❓ **Still unconfirmed** — check Table Editor for the RLS indicator |
+| Game art URLs resolve on the live site | ❓ **Needs a look** — the build sandbox blocked every art CDN, so the hot-linked Steam/Riot URLs are unverified; broken ones fall back to the gradient tile by design, but check Game Hubs and report which show real art |
 | Two-person live test (two different Discord accounts, same squad) | ❓ **Not yet done** — single-user sign-in is confirmed, but nobody has verified two strangers can see each other's posts, fill each other's slots, and land in the same room together on the live site. This is the whole point of the product and the one thing that's never been run for real. |
 
 ## Phase 1: Trust gaps — ✅ done (was the previous "next up")
