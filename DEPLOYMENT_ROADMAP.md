@@ -2,8 +2,9 @@
 
 Single source of truth for "what's done, what's next, in what order."
 Read top to bottom — phases are sequenced by priority, not by how
-interesting they are. (Last rewritten July 2026 — Discord auth is now
-live and working on the real deployment, not just against a mock.)
+interesting they are. (Last rewritten July 2026 — Phases 0.5 and 1 are
+now built and shipped; what's left needs either your Supabase dashboard
+or a live two-person test, not more code.)
 
 ---
 
@@ -13,20 +14,30 @@ The app is **live** at GitHub Pages, deploying automatically on every push
 to `main`. Full feature set:
 
 - 7-view UI, XP/quest/achievement economy, PWA install + offline shell,
-  hotkeys, moderation blocklist, XSS-hardened rendering throughout
+  hotkeys, XSS-hardened rendering throughout
 - Supabase backend: Discord OAuth (**confirmed working against real
-  infrastructure**, not just a mock — see Phase 0), server-side profiles,
-  real LFG posts with live realtime feed, atomic squad-join, real
-  matchmaking scored from actual profiles, endorsements, presence badge
-- **Real squad rooms** with Discord handle exchange on mutual ready —
-  the actual product loop
-- **Discord sign-in is now mandatory** whenever a backend is configured —
-  the old "continue as guest" path (which let anyone build a Gamer Card
-  with zero real identity behind it) is gone. Guest mode still exists as
-  the *only* mode when no backend is configured at all, unchanged.
-- Sign-out is a visible red button, top right, not buried in a menu
-- Secrets handling: no real API keys committed to source; GitHub Actions
-  injects them from encrypted repo secrets at build time
+  infrastructure**), server-side profiles, real LFG posts with live
+  realtime feed, atomic squad-join, real matchmaking scored from actual
+  profiles, endorsements, presence badge
+- **Real squad rooms** with Discord handle exchange on mutual ready
+- **Discord sign-in is mandatory** whenever a backend is configured —
+  no guest shortcut around it. Guest mode remains the only mode when no
+  backend is configured at all.
+- **Verified Discord handles** — pulled from the real OAuth identity,
+  not self-typed, and re-derived on every sign-in so it can't go stale
+  or be faked
+- **Server-side rate limiting** (5 LFG posts/user/60s) and **server-side
+  moderation** (Postgres-side twin of the client blocklist) — both
+  independent of the client, so bypassing the UI doesn't bypass them
+- **Report flow** — flag a teammate from Command Center or a squad room;
+  captured in a `reports` table for manual review
+- One-paragraph **privacy notice** on onboarding
+- Sign-out is a visible red button, top right
+- No real API keys committed to source; GitHub Actions injects them from
+  encrypted repo secrets at build time
+- Mobile: a real overflow bug (radar canvas pushing the dashboard 61px
+  past the viewport edge) was found and fixed while checking the new
+  sign-out button
 
 ---
 
@@ -34,45 +45,23 @@ to `main`. Full feature set:
 
 | Item | Status |
 |---|---|
-| Discord OAuth end-to-end on real infrastructure | ✅ **Confirmed** — hit and fixed two real bugs to get here: a missing `SUPABASE_URL`/`SUPABASE_ANON_KEY` repo-secrets step, and a missing `email` OAuth scope that produced `Error getting user email from external provider` for at least one real user |
+| Discord OAuth end-to-end on real infrastructure | ✅ **Confirmed** — fixed a missing repo-secrets step and a missing `email` OAuth scope to get here |
 | Redirect URL allow-listed in Supabase | ✅ Implied working — auth completes and returns to the app |
-| Rotate the old leaked anon key (from early git history) | ❓ **Still unconfirmed** — you were shown how; worth 30 seconds to check Settings → API Keys that the *current* publishable key isn't the one that was ever committed |
-| RLS actually enabled on all three tables | ❓ **Still unconfirmed** — check Table Editor for the RLS indicator on `profiles`/`lfg_posts`/`endorsements` |
-| Two-person live test (two different Discord accounts, same squad) | ❓ **Not yet done** — single-user sign-in is confirmed, but nobody has verified two strangers can see each other's posts, fill each other's slots, and land in the same room together on the live site |
+| Server-side trust/safety (rate limit, moderation, reports) | ✅ **Shipped this session** — see Phase −1 |
+| **Re-run `schema.sql`** on your live Supabase project | ❗ **Required, not optional** — this session added the `reports` table and several trigger functions. None of it exists on your live database until you paste the updated `supabase/schema.sql` into the SQL Editor again. It's idempotent, safe to re-run. |
+| Rotate the old leaked anon key (from early git history) | ❓ **Still unconfirmed** — Settings → API Keys, confirm the *current* publishable key isn't the one that was ever committed |
+| RLS actually enabled on all tables (now 4: `profiles`/`lfg_posts`/`endorsements`/`reports`) | ❓ **Still unconfirmed** — check Table Editor for the RLS indicator |
+| Two-person live test (two different Discord accounts, same squad) | ❓ **Not yet done** — single-user sign-in is confirmed, but nobody has verified two strangers can see each other's posts, fill each other's slots, and land in the same room together on the live site. This is the whole point of the product and the one thing that's never been run for real. |
 
-Do the three ❓ items before treating this as production-ready for
-strangers. They're each under 5 minutes.
+## Phase 1: Trust gaps — ✅ done (was the previous "next up")
 
-## Phase 0.5: Two things this session's fixes exposed (new)
-
-1. **Self-reported Discord handle is now redundant, possibly harmful.**
-   Onboarding still asks users to *type* their Discord handle for the
-   squad-reveal feature — but they just proved their real Discord
-   identity via OAuth. A typed handle can be wrong, outdated, or
-   someone else's, which undermines the exact trust the mandatory
-   sign-in was supposed to buy. Fix: pull the real username from
-   `user.user_metadata` (Discord's OAuth payload includes it) and either
-   auto-fill the field read-only, or drop the manual field entirely and
-   use the verified one.
-2. **Mobile check on the new topbar button.** The red "SIGN OUT" text
-   button was verified on desktop; the topbar already reflows on mobile
-   (`@media max-width:920px` hides several elements) — worth a quick
-   check that it doesn't collide with the XP bar or overflow on a phone
-   screen now that it's a text button instead of a small icon.
-
-## Phase 1: Close the trust gaps (before inviting strangers beyond your friend)
-
-Your friend already hit one real bug on first contact (the OAuth scope
-issue) — that's exactly what this phase is for: things that only surface
-once someone who isn't you is using it.
-
-1. **Rate limiting** — nothing stops scripted LFG-post or join spam yet.
-2. **Server-side moderation** — the blocklist is client-side only,
-   trivially bypassed by hitting the Supabase REST API directly.
-3. **Report/block flow** — no way to flag a bad actor yet.
-4. **One-paragraph privacy notice** — now more important than before:
-   sign-in is mandatory, so *every* user's Discord identity and handle
-   are stored, not just opt-in guests.
+Rate limiting, server-side moderation, report flow, and the privacy
+notice all shipped this session (see Phase −1). Nothing left here except
+verifying it actually works once `schema.sql` is re-run — the report
+button, a deliberately-spammed post (should get rate-limited after 5),
+and a slur posted via curl directly at the REST API (should get
+rejected server-side even though it'd never reach the API from the UI)
+are all worth trying once.
 
 ## Phase 2: Make matchmaking credible
 
@@ -92,6 +81,9 @@ once someone who isn't you is using it.
    WebRTC stack.
 3. **Tournament brackets** via start.gg/Challonge API, not custom-built.
 4. **Push notifications** via Web Push (already have the PWA shell).
+5. **Report review UI or process** — reports currently land in a table
+   only visible via the Supabase dashboard; no in-app moderation queue,
+   no automated action (auto-hide, auto-ban) on repeat reports yet.
 
 ## Phase 4: Scale & polish (once there are real users to justify it)
 
@@ -103,21 +95,20 @@ once someone who isn't you is using it.
 
 ---
 
-## Immediate next 3 things, in order
+## Immediate next 2 things, in order
 
-Given everything above, if you want a single "what do I do right now"
-answer:
+1. **Re-run `supabase/schema.sql`** on your live project (SQL Editor →
+   paste → run). Everything shipped this session is dead code against
+   your live database until this happens — the reports table, the rate
+   limit trigger, and the moderation trigger don't exist there yet.
+2. **Run the two-person live test.** Grab your friend again, sign in as
+   two different Discord accounts, post an LFG, join it, confirm you
+   land in the same room and handles reveal on mutual ready. This is
+   the one thing that's never been verified end-to-end for real, and
+   it's the entire product.
 
-1. **Run the two-person live test** (Phase 0) — get your friend (or
-   anyone else with a Discord account) to sign in alongside you, post an
-   LFG, join it, and confirm you land in the same room together. This is
-   the one thing that's never actually been verified end-to-end on real
-   infrastructure, and it's the entire point of the product.
-2. **Fix the self-reported Discord handle** (Phase 0.5.1) — quick,
-   closes a trust gap the mandatory-auth change just opened, and I can
-   do this one now if you want.
-3. **Confirm RLS + rotate the old key** (Phase 0) — two dashboard checks,
-   5 minutes total, then Phase 0 is genuinely closed out.
+RLS confirmation and the old key rotation are still open from before —
+worth doing in the same sitting, but neither blocks the two items above.
 
 ### Sources (Phase 2/3 vendor research, unchanged from earlier)
 - [HenrikDev unofficial Valorant API](https://github.com/Henrik-3/unofficial-valorant-api) · [Riot VALORANT API policies](https://www.riotgames.com/en/DevRel/valorant-api-launch) · [Tracker Network developers](https://tracker.gg/developers)
