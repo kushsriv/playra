@@ -625,6 +625,14 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:.04em}
 .rm .rm-s{font-family:var(--font-mono);font-size:10px;color:var(--ink-mute);letter-spacing:.1em;margin-top:4px}
 .rm.ready{border-color:var(--lime);box-shadow:0 0 18px rgba(61,255,160,.22)}
 .rm.ready .rm-s{color:var(--lime)}
+.rm.waiting{opacity:.55;border-style:dashed}
+.rm .rm-d{
+  margin-top:8px;font-family:var(--font-mono);font-size:11px;color:var(--cyan);
+  border:1px solid rgba(0,229,255,.35);border-radius:999px;padding:3px 10px;
+  cursor:pointer;display:inline-block;transition:all .15s;
+  animation:toastIn .35s cubic-bezier(.2,.9,.25,1.2) both;
+}
+.rm .rm-d:hover{background:rgba(0,229,255,.12);box-shadow:var(--glow-cyan)}
 .voice-wave{display:flex;gap:3px;align-items:center;justify-content:center;height:16px;margin-top:8px}
 .voice-wave i{width:3px;background:var(--cyan);border-radius:2px;animation:wave 1s ease-in-out infinite}
 .voice-wave i:nth-child(2){animation-delay:.15s}.voice-wave i:nth-child(3){animation-delay:.3s}

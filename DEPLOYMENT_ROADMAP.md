@@ -40,6 +40,11 @@ The repo is a complete, self-contained front-end prototype — ~1,500 lines tota
 | Real matchmaking (Command Center recs + Discover deck scored from actual profiles) | ✅ Built, needs your credentials | `computeCompat()`, `Backend.fetchProfiles`, `profileToSwipeCard()` |
 | Endorsements (real, persisted, one-per-trait-per-endorser) | ✅ Built, needs your credentials | `supabase/schema.sql` (`endorsements` table), `openEndorsePicker()` |
 | Client-side moderation blocklist on callsigns + LFG titles | ✅ Done | `hasBlockedWord()`, `js/app.js` |
+| Squad joining fills slots atomically + live on all clients | ✅ Built, needs your credentials | `join_lfg()` in schema, `Backend.joinLfgPost` |
+| Real realtime squad rooms (presence members, synced ready checks) | ✅ Built, needs your credentials | `Backend.joinRoom/setRoomReady/leaveRoom` |
+| Discord handle exchange on squad lock (the actual "connect" moment) | ✅ Built, needs your credentials | `discord_handle` column, `renderRoomMembers()` |
+| Hotkeys (1–7 views, Esc closes modals) + LFG filter counts | ✅ Done | `VIEW_KEYS` handler, `renderLfgFilters()` |
+| GitHub Pages deploy pipeline (push to main → live) | ✅ Done — enable Pages once | `.github/workflows/deploy.yml`, `SETUP.md` |
 
 The backend integration is code-complete and was verified against a mocked Supabase client (auth, profile CRUD, LFG insert/fetch/realtime, presence — all exercised end-to-end in that mock). It has **not** been run against a real Supabase project or Discord app, since those require your own accounts — see `SETUP.md` for the exact steps to provision them and the manual checklist to run once you have real credentials. Until `js/config.js` is filled in, the app is functionally identical to the original static prototype.
 

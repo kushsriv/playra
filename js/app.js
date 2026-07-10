@@ -27,7 +27,8 @@ document.addEventListener('click', e=>{ if(e.target.closest('button,.chip')) Sfx
 /* ================= STATE ================= */
 const S = {
   name:'Recruit', avatar:'⚡', games:['Valorant'], langs:['English'], styles:['Competitive','IGL'],
-  goals:['Rank Push'], level:1, xp:0, xpNeed:100, quests:{}, achievements:new Set(['first']), onboarded:false
+  goals:['Rank Push'], level:1, xp:0, xpNeed:100, quests:{}, achievements:new Set(['first']), onboarded:false,
+  discord:''
 };
 const XP_EVENTS = { join:40, ready:25, invite:20, quest:0, post:30, register:35, hub:10 };
 
@@ -48,7 +49,7 @@ function saveState(){
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       name:S.name, avatar:S.avatar, games:S.games, langs:S.langs, styles:S.styles, goals:S.goals,
       level:S.level, xp:S.xp, xpNeed:S.xpNeed, quests:S.quests, achievements:[...S.achievements],
-      onboarded:S.onboarded, moodIdx: typeof moodIdx==='number'?moodIdx:0
+      onboarded:S.onboarded, discord:S.discord||'', moodIdx: typeof moodIdx==='number'?moodIdx:0
     }));
   }catch(e){}
   if(Backend.enabled && Backend.currentUser()){
@@ -65,7 +66,8 @@ function loadState(){
     const d = JSON.parse(raw);
     Object.assign(S, {
       name:d.name, avatar:d.avatar, games:d.games, langs:d.langs, styles:d.styles, goals:d.goals,
-      level:d.level, xp:d.xp, xpNeed:d.xpNeed, quests:d.quests||{}, onboarded:!!d.onboarded
+      level:d.level, xp:d.xp, xpNeed:d.xpNeed, quests:d.quests||{}, onboarded:!!d.onboarded,
+      discord:d.discord||''
     });
     S.achievements = new Set(d.achievements && d.achievements.length ? d.achievements : ['first']);
     if(typeof d.moodIdx==='number') moodIdx = d.moodIdx;
@@ -623,30 +625,71 @@ function swipe(dir,p,card){
 $('btnSkip').onclick=()=>swipe(-1);
 $('btnInvite').onclick=()=>swipe(1);
 
-/* ================= SQUAD ROOM ================= */
-let roomTimer=null;
+/* ================= SQUAD ROOM =================
+   Live posts (backend + signed in) get a real realtime room: presence
+   shows who's actually here, READY re-tracks your state to everyone,
+   and Discord handles are revealed only once the whole squad is ready —
+   that's the handoff. Demo posts keep the simulated flow. */
+let roomTimer=null, roomIsLive=false, roomLocked=false;
+function memberCard(m, isSelf){
+  const card = el(`<div class="rm ${m.ready?'ready':''}">
+    <div class="av"></div><div class="rm-n"></div><div class="rm-s">${m.ready?'READY':'STANDBY'}</div>
+    <div class="rm-d" style="display:none"></div></div>`);
+  card.querySelector('.av').textContent = m.avatar || (m.name||'?')[0].toUpperCase();
+  card.querySelector('.rm-n').textContent = (m.name||'Operator') + (isSelf?' (you)':'');
+  return card;
+}
+function renderRoomMembers(members, selfKey){
+  const wrap = $('roomMembers'); wrap.innerHTML='';
+  const allReady = members.length>=2 && members.every(m=>m.ready);
+  members.forEach(m=>{
+    const card = memberCard(m, m.key===selfKey);
+    if(allReady && m.discord){
+      const d = card.querySelector('.rm-d');
+      d.style.display='block'; d.textContent='@'+m.discord;
+      d.title='Click to copy';
+      d.onclick=()=>{ navigator.clipboard?.writeText(m.discord).then(()=>toast('📋','Copied',('@'+m.discord).toUpperCase())); };
+    }
+    wrap.appendChild(card);
+  });
+  if(members.length<2) wrap.appendChild(el(`<div class="rm waiting"><div class="av">📡</div><div class="rm-n">Waiting for squad…</div><div class="rm-s">SHARE THE POST</div></div>`));
+  if(allReady && !roomLocked){
+    roomLocked = true; Sfx.launch();
+    toast('🚀','SQUAD LOCKED','ALL READY — DISCORD HANDLES REVEALED, ADD EACH OTHER');
+    unlockAch('clutch','First Clutch');
+  }
+}
 function openRoom(p){
-  const g=gameBy(p.game);
+  roomIsLive = !!(p.id && Backend.enabled && Backend.currentUser());
+  roomLocked = false;
   $('roomTitle').textContent=p.title.length>44?p.title.slice(0,44)+'…':p.title;
-  $('roomSub').textContent=`${p.game} · voice channel armed. Everyone presses READY, then the room hands off to the game lobby.`;
-  const names=['Vex','Nyx','Draco', S.name];
-  $('roomMembers').innerHTML = names.map((n,i)=>`<div class="rm ${i<2?'ready':''}" id="rm-${i}">
-    <div class="av">${i===3?S.avatar:n[0]}</div><div class="rm-n">${n}${i===3?' (you)':''}</div><div class="rm-s">${i<2?'READY':'STANDBY'}</div></div>`).join('');
+  $('roomSub').textContent = roomIsLive
+    ? `${p.game} · live room. Everyone presses READY, then Discord handles unlock so the squad can connect.`
+    : `${p.game} · voice channel armed. Everyone presses READY, then the room hands off to the game lobby.`;
   $('readyBtn').disabled=false; $('readyBtn').textContent='PRESS READY';
   openOv('roomOv'); addXP(XP_EVENTS.join,'Joined squad room'); completeQuest('q1');
+  if(roomIsLive){
+    $('roomMembers').innerHTML='<div class="rm waiting"><div class="av">📡</div><div class="rm-n">Connecting…</div><div class="rm-s">LINKING ROOM</div></div>';
+    Backend.joinRoom(p.id, {name:S.name, avatar:S.avatar, discord:S.discord||''}, renderRoomMembers);
+  } else {
+    const names=['Vex','Nyx','Draco', S.name];
+    $('roomMembers').innerHTML = names.map((n,i)=>`<div class="rm ${i<2?'ready':''}" id="rm-${i}">
+      <div class="av">${i===3?S.avatar:n[0]}</div><div class="rm-n">${i===3?esc(n)+' (you)':n}</div><div class="rm-s">${i<2?'READY':'STANDBY'}</div></div>`).join('');
+  }
   let s=300; clearInterval(roomTimer);
   roomTimer=setInterval(()=>{ s=Math.max(0,s-1);
     $('roomCd').textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
     if(!s) clearInterval(roomTimer); },1000);
 }
 $('readyBtn').onclick=()=>{
-  const me=$('rm-3'); me.classList.add('ready'); me.querySelector('.rm-s').textContent='READY';
   $('readyBtn').disabled=true; $('readyBtn').textContent='LOCKED IN'; Sfx.ready();
   completeQuest('q3');
+  if(roomIsLive){ Backend.setRoomReady(); return; }
+  const me=$('rm-3'); me.classList.add('ready'); me.querySelector('.rm-s').textContent='READY';
   setTimeout(()=>{ const o=$('rm-2'); o.classList.add('ready'); o.querySelector('.rm-s').textContent='READY'; Sfx.ready(); },900);
   setTimeout(()=>{ Sfx.launch(); toast('🚀','SQUAD LOCKED','ALL READY — HANDING OFF TO GAME LOBBY'); unlockAch('clutch','First Clutch'); closeRoom(); },2100);
 };
-function closeRoom(){ clearInterval(roomTimer); closeOv('roomOv'); }
+function closeRoom(){ clearInterval(roomTimer); Backend.leaveRoom && Backend.leaveRoom(); closeOv('roomOv'); }
 
 /* ================= POST MODAL ================= */
 let postGameSel='Valorant', postExpSel='15 min';
@@ -712,6 +755,7 @@ function pickCloud(id, opts, selArr, max=4){
 function onboardOpen(edit=false){
   OB.step=1; obShow();
   $('obName').value = edit? S.name : '';
+  $('obDiscord').value = S.discord || '';
   $('avPick').innerHTML='';
   OB.avatars.forEach(a=>{
     const d=el(`<div class="av ${a===S.avatar?'sel':''}" tabindex="0" role="button">${a}</div>`);
@@ -737,6 +781,7 @@ $('obNext').onclick=()=>{
       if(hasBlockedWord(n)){ toast('🚫','Callsign blocked','PICK SOMETHING ELSE'); return; }
       S.name=n;
     }
+    S.discord = $('obDiscord').value.trim().replace(/^@/,'').slice(0,37);
   }
   if(OB.step<3){ OB.step++; obShow(); return; }
   S.onboarded = true;
@@ -785,7 +830,7 @@ function applyProfileRow(row){
   S.name=row.name; S.avatar=row.avatar; S.games=row.games||[]; S.langs=row.langs||[];
   S.styles=row.styles||[]; S.goals=row.goals||[]; S.level=row.level; S.xp=row.xp; S.xpNeed=row.xp_need;
   S.quests=row.quests||{}; S.achievements=new Set(row.achievements&&row.achievements.length?row.achievements:['first']);
-  S.onboarded=!!row.onboarded; moodIdx = row.mood_idx||0;
+  S.onboarded=!!row.onboarded; S.discord=row.discord_handle||''; moodIdx = row.mood_idx||0;
 }
 
 /* ================= AMBIENT SIM =================

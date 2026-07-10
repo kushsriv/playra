@@ -60,7 +60,8 @@ const Backend = (() => {
         langs: state.langs, styles: state.styles, goals: state.goals, level: state.level,
         xp: state.xp, xp_need: state.xpNeed, quests: state.quests,
         achievements: [...state.achievements], mood_idx: state.moodIdx || 0,
-        onboarded: !!state.onboarded, updated_at: new Date().toISOString()
+        onboarded: !!state.onboarded, discord_handle: state.discord || '',
+        updated_at: new Date().toISOString()
       });
       if(error) throw error;
       return true;
@@ -155,6 +156,37 @@ const Backend = (() => {
     }catch(e){ console.warn('[backend] insertEndorsement failed', e); return false; }
   }
 
+  /* ---- squad rooms: one realtime channel per LFG post ----
+     Presence carries each member's {name, avatar, discord, ready}; pressing
+     READY re-tracks with ready:true and every client re-renders on sync. */
+  let roomChannel = null;
+  let roomSelf = null;
+  function joinRoom(postId, member, onSync){
+    if(!enabled) return false;
+    leaveRoom();
+    const user = currentUser();
+    const key = user ? user.id : `guest-${Math.random().toString(36).slice(2)}`;
+    roomSelf = { key, ...member, ready:false };
+    roomChannel = client.channel(`room-${postId}`, { config: { presence: { key } } });
+    roomChannel.on('presence', { event: 'sync' }, () => {
+      const state = roomChannel.presenceState();
+      const members = Object.entries(state).map(([k, metas]) => ({ key:k, ...metas[0] }));
+      onSync(members, key);
+    });
+    roomChannel.subscribe(status => {
+      if(status === 'SUBSCRIBED') roomChannel.track(roomSelf);
+    });
+    return true;
+  }
+  function setRoomReady(){
+    if(!roomChannel || !roomSelf) return;
+    roomSelf.ready = true;
+    roomChannel.track(roomSelf);
+  }
+  function leaveRoom(){
+    if(roomChannel){ try{ roomChannel.unsubscribe(); }catch(e){} roomChannel=null; roomSelf=null; }
+  }
+
   function joinPresence(name, onCountChange){
     if(!enabled) return;
     const user = currentUser();
@@ -173,6 +205,7 @@ const Backend = (() => {
     get enabled(){ return enabled; },
     init, onAuthChange, currentUser, signInWithDiscord, signOut,
     loadProfile, saveProfile, fetchLfgPosts, insertLfgPost, subscribeLfg, joinLfgPost, joinPresence,
-    fetchProfiles, fetchEndorsementCounts, insertEndorsement
+    fetchProfiles, fetchEndorsementCounts, insertEndorsement,
+    joinRoom, setRoomReady, leaveRoom
   };
 })();

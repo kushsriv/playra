@@ -1,4 +1,18 @@
-# PLAYRA — backend setup (Discord login + live LFG + presence)
+# PLAYRA — deployment & backend setup
+
+## Deploying the site (works today, no backend needed)
+
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) deploys the app
+to GitHub Pages on every push to `main`. One-time setup:
+
+1. Repo **Settings → Pages → Source**: select **GitHub Actions**.
+2. Merge this branch to `main` (or push anything to `main`).
+3. The site goes live at `https://<owner>.github.io/playra/`.
+
+That URL is also what you'll add to Supabase's redirect allow-list in
+step 4 below once you turn the backend on.
+
+# Backend setup (Discord login + live LFG + presence + squad rooms)
 
 PLAYRA runs with **zero setup** in guest/local mode — just open `index.html`.
 Everything below is optional and only turns on once you fill in `js/config.js`.
@@ -10,6 +24,11 @@ original static prototype (localStorage only, no accounts, no network calls).
 - "Sign in with Discord" on the landing page
 - Player profiles (Gamer Card, XP, quests, achievements) persisted server-side, not just in this browser
 - Real LFG posts, visible to every visitor and updated live via realtime
+- Joining a squad fills its slots live on every connected client
+- **Real squad rooms**: players who join the same post see each other,
+  ready-checks sync in realtime, and when everyone is ready each member's
+  Discord handle is revealed (click to copy) so the squad can actually
+  connect — this is the product's core handoff
 - A "🟢 N LIVE" presence badge showing how many operators are actually connected
 
 ## 1. Create a Supabase project
@@ -70,6 +89,9 @@ Open `http://localhost:8080`, click **Sign in with Discord**, and confirm:
 - the onboarding modal appears once (new profile row created in `profiles`)
 - posting an LFG broadcast shows up instantly in a second browser/incognito
   window signed in as a different Discord account
+- joining that post from the second window fills a slot on both screens
+- both windows land in the same squad room, see each other, and when both
+  press READY the Discord handles appear
 - refreshing keeps you signed in and restores your Gamer Card
 
 ## Notes / limits of this integration

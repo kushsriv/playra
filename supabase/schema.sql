@@ -19,8 +19,12 @@ create table if not exists public.profiles (
   achievements text[] not null default '{first}',
   mood_idx int not null default 0,
   onboarded boolean not null default false,
+  discord_handle text not null default '',
   updated_at timestamptz not null default now()
 );
+
+-- safe to run on an existing deployment
+alter table public.profiles add column if not exists discord_handle text not null default '';
 
 alter table public.profiles enable row level security;
 
