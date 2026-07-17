@@ -290,11 +290,25 @@ document.addEventListener('keydown', e=>{
 
 /* ================= 3D TILT ================= */
 document.addEventListener('mousemove', e=>{
-  const c = e.target.closest('.tilt'); 
+  const c = e.target.closest('.tilt');
   document.querySelectorAll('.tilt').forEach(t=>{ if(t!==c) t.style.transform=''; });
   if(!c) return;
   const r=c.getBoundingClientRect(), x=(e.clientX-r.left)/r.width-.5, y=(e.clientY-r.top)/r.height-.5;
   c.style.transform=`perspective(900px) rotateY(${x*4}deg) rotateX(${-y*4}deg)`;
+});
+
+/* ================= CURSOR SPOTLIGHT =================
+   Every card surface (.panel/.rec-card/.hub-card/.mission-card/.lfg-card/
+   .tour-card/.swipe-card) gets a soft light that follows the pointer —
+   driven purely by CSS custom properties so there's no layout/paint cost
+   beyond the gradient itself. */
+const SPOT_SEL = '.panel,.rec-card,.hub-card,.mission-card,.lfg-card,.tour-card,.swipe-card';
+document.addEventListener('pointermove', e=>{
+  const c = e.target.closest(SPOT_SEL);
+  if(!c) return;
+  const r = c.getBoundingClientRect();
+  c.style.setProperty('--mx', `${((e.clientX-r.left)/r.width*100).toFixed(1)}%`);
+  c.style.setProperty('--my', `${((e.clientY-r.top)/r.height*100).toFixed(1)}%`);
 });
 
 /* ================= REAL MATCHMAKING ================= */
