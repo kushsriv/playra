@@ -129,11 +129,11 @@ const RECS = [
   {n:'Miru', h:'@miru_plays', rank:'Diamond · APEX', compat:91, tags:[['vi','SUPPORT'],['lm','PATIENT'],['am','WEEKENDS']]}
 ];
 const SWIPES = [
-  {n:'Nyx', h:'@nyx_ftw · IMMORTAL 1', compat:97, glow:'rgba(61,255,160,.2)', bars:[['SCHEDULE OVERLAP',94],['COMMS STYLE',91],['GOAL ALIGNMENT',98],['VIBE',96]], tags:[['cy','VALORANT'],['mg','SMOKES MAIN'],['lm','NO TOXICITY'],['am','NIGHT OWL']]},
-  {n:'Draco', h:'@draco · FACEIT LVL 8', compat:93, glow:'rgba(0,229,255,.2)', bars:[['SCHEDULE OVERLAP',88],['COMMS STYLE',95],['GOAL ALIGNMENT',90],['VIBE',89]], tags:[['cy','CS2'],['mg','IGL'],['am','TOURNAMENTS'],['lm','TEACHER']]},
-  {n:'Miru', h:'@miru_plays · DIAMOND', compat:91, glow:'rgba(255,61,129,.2)', bars:[['SCHEDULE OVERLAP',96],['COMMS STYLE',84],['GOAL ALIGNMENT',88],['VIBE',94]], tags:[['mg','APEX'],['vi','SUPPORT MAIN'],['lm','PATIENT'],['cy','WEEKENDS']]},
-  {n:'Blocksmith', h:'@blocksmith · 2.4K HRS', compat:89, glow:'rgba(95,187,78,.22)', bars:[['SCHEDULE OVERLAP',82],['COMMS STYLE',92],['GOAL ALIGNMENT',95],['VIBE',85]], tags:[['lm','MINECRAFT'],['cy','BUILDER'],['am','HARDCORE'],['vi','CHILL']]},
-  {n:'Aerialist', h:'@aerialist · GRAND CHAMP', compat:87, glow:'rgba(139,92,246,.24)', bars:[['SCHEDULE OVERLAP',90],['COMMS STYLE',80],['GOAL ALIGNMENT',86],['VIBE',91]], tags:[['vi','ROCKET LEAGUE'],['cy','COACH'],['lm','FUNNY'],['am','SPEEDRUNNER']]}
+  {n:'Nyx', h:'@nyx_ftw · IMMORTAL 1', compat:97, glow:'rgba(255,30,45,.2)', bars:[['SCHEDULE OVERLAP',94],['COMMS STYLE',91],['GOAL ALIGNMENT',98],['VIBE',96]], tags:[['cy','VALORANT'],['mg','SMOKES MAIN'],['lm','NO TOXICITY'],['am','NIGHT OWL']]},
+  {n:'Draco', h:'@draco · FACEIT LVL 8', compat:93, glow:'rgba(255,255,255,.16)', bars:[['SCHEDULE OVERLAP',88],['COMMS STYLE',95],['GOAL ALIGNMENT',90],['VIBE',89]], tags:[['cy','CS2'],['mg','IGL'],['am','TOURNAMENTS'],['lm','TEACHER']]},
+  {n:'Miru', h:'@miru_plays · DIAMOND', compat:91, glow:'rgba(255,71,87,.2)', bars:[['SCHEDULE OVERLAP',96],['COMMS STYLE',84],['GOAL ALIGNMENT',88],['VIBE',94]], tags:[['mg','APEX'],['vi','SUPPORT MAIN'],['lm','PATIENT'],['cy','WEEKENDS']]},
+  {n:'Blocksmith', h:'@blocksmith · 2.4K HRS', compat:89, glow:'rgba(255,255,255,.14)', bars:[['SCHEDULE OVERLAP',82],['COMMS STYLE',92],['GOAL ALIGNMENT',95],['VIBE',85]], tags:[['lm','MINECRAFT'],['cy','BUILDER'],['am','HARDCORE'],['vi','CHILL']]},
+  {n:'Aerialist', h:'@aerialist · GRAND CHAMP', compat:87, glow:'rgba(255,30,45,.24)', bars:[['SCHEDULE OVERLAP',90],['COMMS STYLE',80],['GOAL ALIGNMENT',86],['VIBE',91]], tags:[['vi','ROCKET LEAGUE'],['cy','COACH'],['lm','FUNNY'],['am','SPEEDRUNNER']]}
 ];
 const TOURS = [
   {d:'12', m:'JUL', game:'Valorant', name:'Mumbai Ascension Cup', need:'2 rosters recruiting · Immortal+', prize:'₹1,00,000'},
@@ -232,13 +232,13 @@ document.addEventListener('keydown', e=>{
   const fit=()=>{W=cv.width=innerWidth;H=cv.height=innerHeight;};
   fit(); addEventListener('resize',fit);
   for(let i=0;i<90;i++) parts.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,r:Math.random()*1.6+.4,v:Math.random()*.3+.05,tw:Math.random()*Math.PI*2});
-  for(let i=0;i<60;i++) drops.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,l:Math.random()*22+8,v:Math.random()*5+4,hue:Math.random()<.5?'0,229,255':'255,61,129'});
+  for(let i=0;i<60;i++) drops.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,l:Math.random()*22+8,v:Math.random()*5+4,hue:Math.random()<.5?'255,30,45':'255,255,255'});
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function frame(){
     if($('landing').classList.contains('gone')) return;
     cx.clearRect(0,0,W,H);
     parts.forEach(p=>{ p.y-=p.v; p.tw+=.03; if(p.y<-4){p.y=H+4;p.x=Math.random()*W;}
-      cx.globalAlpha=.35+Math.sin(p.tw)*.3; cx.fillStyle='#9BE8FF';
+      cx.globalAlpha=.35+Math.sin(p.tw)*.3; cx.fillStyle='#FFFFFF';
       cx.beginPath(); cx.arc(p.x,p.y,p.r,0,7); cx.fill(); });
     cx.globalAlpha=1;
     drops.forEach(d=>{ d.y+=d.v; if(d.y>H){d.y=-30;d.x=Math.random()*W;}
@@ -261,18 +261,18 @@ document.addEventListener('keydown', e=>{
 /* ================= RADAR CANVAS ================= */
 (function(){
   const cv=$('radar'), cx=cv.getContext('2d'); const R=220, C=220; let a=0;
-  const blips=[{r:.45,ang:.9,c:'#00E5FF'},{r:.7,ang:2.4,c:'#FF3D81'},{r:.85,ang:4.2,c:'#3DFFA0'},{r:.3,ang:5.4,c:'#FFB020'}];
+  const blips=[{r:.45,ang:.9,c:'#FF1E2D'},{r:.7,ang:2.4,c:'#FFFFFF'},{r:.85,ang:4.2,c:'#FF4757'},{r:.3,ang:5.4,c:'#B5B5B5'}];
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function draw(){
     // don't burn frames while the dashboard is off-screen
     if(!$('view-dash').classList.contains('on')){ requestAnimationFrame(draw); return; }
     cx.clearRect(0,0,440,440);
-    cx.strokeStyle='rgba(0,229,255,.18)'; cx.lineWidth=1;
+    cx.strokeStyle='rgba(255,30,45,.18)'; cx.lineWidth=1;
     [0.33,0.66,1].forEach(k=>{cx.beginPath();cx.arc(C,C,R*k*.92,0,7);cx.stroke();});
     cx.beginPath();cx.moveTo(C-R*.92,C);cx.lineTo(C+R*.92,C);cx.moveTo(C,C-R*.92);cx.lineTo(C,C+R*.92);cx.stroke();
     // sweep
     const g=cx.createConicGradient ? cx.createConicGradient(a,C,C) : null;
-    if(g){ g.addColorStop(0,'rgba(0,229,255,.35)'); g.addColorStop(.12,'rgba(0,229,255,0)'); g.addColorStop(1,'rgba(0,229,255,0)');
+    if(g){ g.addColorStop(0,'rgba(255,30,45,.35)'); g.addColorStop(.12,'rgba(255,30,45,0)'); g.addColorStop(1,'rgba(255,30,45,0)');
       cx.fillStyle=g; cx.beginPath(); cx.moveTo(C,C); cx.arc(C,C,R*.92,a,a+ .5); cx.closePath(); cx.fill(); }
     blips.forEach(b=>{
       const x=C+Math.cos(b.ang)*R*b.r*.9, y=C+Math.sin(b.ang)*R*b.r*.9;
@@ -321,7 +321,7 @@ function computeCompat(mine, other){
 function profileToSwipeCard(p){
   return {
     n:p.name||'Operator', h:'@'+(p.name||'operator').toLowerCase().replace(/\s/g,''),
-    compat:computeCompat(S,p), glow:'rgba(0,229,255,.2)',
+    compat:computeCompat(S,p), glow:'rgba(255,30,45,.2)',
     bars:[['GAME OVERLAP',Math.round(jac(S.games,p.games)*100)],['COMMS STYLE',Math.round(jac(S.langs,p.langs)*100)],
           ['GOAL ALIGNMENT',Math.round(jac(S.goals,p.goals)*100)],['VIBE',Math.round(jac(S.styles,p.styles)*100)]],
     tags:[...(p.games||[]).slice(0,2).map(g=>['cy',g.toUpperCase()]),...(p.styles||[]).slice(0,1).map(s=>['mg',s.toUpperCase()]),...(p.langs||[]).slice(0,1).map(l=>['am',l.toUpperCase()])],
@@ -385,7 +385,7 @@ function completeQuest(id){
 function renderTourMini(){
   $('tourMini').innerHTML='';
   TOURS.slice(0,3).forEach((t,i)=>{
-    const colors=['#FF3D81','#00E5FF','#3DFFA0'];
+    const colors=['#FF1E2D','#FFFFFF','#FF4757'];
     $('tourMini').appendChild(el(`<div class="radar-blip-row" onclick="go('tours')">
       <span class="b" style="background:${colors[i]};box-shadow:0 0 8px ${colors[i]}"></span>
       <div><b>${t.name}</b> · ${t.m} ${t.d} · <span class="mono" style="font-size:11px;color:var(--amber)">${t.prize}</span></div></div>`));
@@ -538,7 +538,7 @@ function selectHub(g){
   $('hubDetail').innerHTML='';
   $('hubDetail').appendChild(el(`<div class="panel" style="--accent:${g.c};background:
       radial-gradient(80% 140% at 90% -20%, ${g.glow}, transparent 60%),
-      linear-gradient(165deg,rgba(16,26,46,.8),rgba(9,14,26,.9))">
+      linear-gradient(165deg,rgba(14,14,14,.82),rgba(6,6,6,.92))">
     <div class="eyebrow" style="--accent:${g.c};color:${g.c}">HUB ONLINE · INTERFACE RETUNED</div>
     <h2 style="font-size:26px;margin-top:10px">${g.n} Command</h2>
     <p style="color:var(--ink-dim);margin:8px 0 18px;max-width:560px">Live LFG for ${g.n}, active clans recruiting, and this week's scrim calendar — all themed to the hub's own signal color.</p>
