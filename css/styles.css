@@ -7,12 +7,12 @@
   --surface-2:#1D1D1D;       /* hover / raised cards */
   --surface-3:#262626;       /* pills, inputs */
   /* neutral hairlines — NOT accent-colored, this is the big shift */
-  --line:rgba(255,255,255,.07);
-  --line-2:rgba(255,255,255,.12);
+  --line:rgba(255,255,255,.11);
+  --line-2:rgba(255,255,255,.18);
   --line-hot:rgba(255,30,45,.40);
   --ink:#FFFFFF;
   --ink-dim:#B5B5B5;
-  --ink-mute:#6B6B6B;
+  --ink-mute:#828282;
   --cyan:#FF1E2D;
   --magenta:#FF4757;
   --amber:#FFFFFF;
@@ -94,7 +94,7 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 .eyebrow{
   display:inline-flex;align-items:center;
   font-family:var(--font-body);font-size:11px;font-weight:700;letter-spacing:.08em;
-  text-transform:uppercase;color:#FFFFFF;background:var(--accent);
+  text-transform:uppercase;color:#0A0A0A;background:var(--accent);
   padding:4px 10px;border-radius:5px;
 }
 
@@ -131,7 +131,7 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
   will-change:transform;
 }
 .landing-tag{
-  display:inline-block;font-size:11px;font-weight:700;letter-spacing:.1em;color:#FFFFFF;
+  display:inline-block;font-size:11px;font-weight:700;letter-spacing:.1em;color:#0A0A0A;
   background:var(--cyan);padding:5px 12px;border-radius:6px;
   text-transform:uppercase;margin-bottom:26px;
   animation:fadeUp 1.2s .3s both;
@@ -150,7 +150,7 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 .enter-wrap{margin-top:44px;animation:fadeUp 1.2s 1.05s both;display:flex;flex-direction:column;align-items:center}
 .btn-enter{
   position:relative;overflow:hidden;font-family:var(--font-body);font-weight:700;font-size:14.5px;
-  letter-spacing:.05em;text-transform:uppercase;color:#FFFFFF;
+  letter-spacing:.05em;text-transform:uppercase;color:#0A0A0A;
   padding:17px 52px;border-radius:12px;
   background:linear-gradient(135deg,#FF1E2D,#C4001A);
   transition:transform .18s ease, filter .18s ease, box-shadow .18s ease;
@@ -334,7 +334,9 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
     linear-gradient(180deg,var(--surface-1),var(--surface-0));
   box-shadow:var(--sh-2);
   padding:22px;
+  transition:border-color .2s ease,box-shadow .2s ease;
 }
+.panel:hover{border-color:var(--line-2);box-shadow:var(--sh-2),0 0 0 1px rgba(255,30,45,.18)}
 /* cursor-reactive spotlight — a soft light that follows the pointer over
    interactive surfaces, driven by --mx/--my set from pointermove in app.js.
    Cheap: one gradient layer, opacity-only transition, no repaint on move. */
@@ -370,7 +372,7 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 .btn.primary:hover::before,.btn.hot:hover::before,.btn-enter:hover::before{left:130%}
 .btn.primary{
   background:linear-gradient(135deg,#FF1E2D,#C4001A);
-  border-color:transparent;color:#FFFFFF;font-weight:700;
+  border-color:transparent;color:#0A0A0A;font-weight:700;
   box-shadow:0 6px 18px -6px rgba(255,30,45,.5);
 }
 .btn.primary:hover{filter:brightness(1.08);box-shadow:0 10px 26px -6px rgba(255,30,45,.6)}
@@ -391,22 +393,22 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
   font-family:var(--font-body);font-size:10.5px;letter-spacing:.04em;font-weight:600;
   border:1px solid transparent;color:var(--ink-dim);background:var(--surface-3);
 }
-.tag.cy{color:#FFC9CC;background:rgba(255,30,45,.12)}
+.tag.cy{color:#FFC9CC;background:rgba(255,30,45,.16)}
 .tag.mg{color:#FF8A93;background:rgba(255,71,87,.12)}
-.tag.am{color:#FFFFFF;background:rgba(255,255,255,.12)}
-.tag.lm{color:#F2F2F2;background:rgba(255,255,255,.12)}
-.tag.vi{color:#F0F0F0;background:rgba(255,255,255,.14)}
+.tag.am{color:#9E9E9E;background:rgba(255,255,255,.06)}
+.tag.lm{color:#FFFFFF;background:rgba(255,255,255,.18)}
+.tag.vi{color:#FFB3B8;background:rgba(255,30,45,.08)}
 .chip{
   padding:8px 15px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface-2);
   font-weight:600;font-size:13.5px;color:var(--ink-dim);transition:all .15s;
 }
 .chip:hover{color:var(--ink);border-color:var(--line-hot);background:var(--surface-3)}
-.chip.sel{color:#FFFFFF;background:var(--cyan);border-color:var(--cyan);box-shadow:0 4px 14px -4px rgba(255,30,45,.5)}
+.chip.sel{color:#0A0A0A;background:var(--cyan);border-color:var(--cyan);box-shadow:0 4px 14px -4px rgba(255,30,45,.5)}
 .chip .chip-n{
   font-family:var(--font-mono);font-size:11px;color:var(--cyan);
   background:rgba(255,30,45,.12);border-radius:999px;padding:0 7px;margin-left:2px;
 }
-.chip.sel .chip-n{color:#FFFFFF;background:rgba(4,6,12,.2)}
+.chip.sel .chip-n{color:#0A0A0A;background:rgba(255,255,255,.35)}
 
 /* grids */
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
@@ -613,7 +615,7 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
   line-height:1;pointer-events:none;
 }
 .gc-slide .gc-info{position:relative;z-index:2;max-width:60%}
-.gc-slide .gc-tag{display:inline-block;font-family:var(--font-body);font-weight:700;font-size:10.5px;letter-spacing:.08em;color:#FFFFFF;background:var(--hub,#FF1E2D);padding:4px 11px;border-radius:5px;text-transform:uppercase;margin-bottom:14px}
+.gc-slide .gc-tag{display:inline-block;font-family:var(--font-body);font-weight:700;font-size:10.5px;letter-spacing:.08em;color:#0A0A0A;background:var(--hub,#FF1E2D);padding:4px 11px;border-radius:5px;text-transform:uppercase;margin-bottom:14px}
 .gc-slide .gc-name{font-family:var(--font-display);font-weight:800;font-size:40px;margin-bottom:8px;letter-spacing:-.02em;text-shadow:0 4px 24px rgba(0,0,0,.5)}
 .gc-slide .gc-stat{font-size:13px;font-weight:500;color:var(--ink-dim)}
 .gc-slide .gc-stat b{color:#fff}
