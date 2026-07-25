@@ -253,32 +253,28 @@ document.addEventListener('keydown', e=>{
   if(/^[1-7]$/.test(e.key)) go(VIEW_KEYS[+e.key-1]);
 });
 
-/* ================= LANDING: particles + neon rain + parallax ================= */
+/* ================= LANDING: 3D scene + parallax =================
+   Runs the same createAmbient3D scene as the app shell so the two never
+   drift apart, tuned brighter because the landing page has no content
+   competing with it. Stops itself once the landing is dismissed. */
 (function(){
-  const cv = $('landingCanvas'), cx = cv.getContext('2d');
-  let W,H,parts=[],drops=[];
-  const fit=()=>{W=cv.width=innerWidth;H=cv.height=innerHeight;};
-  fit(); addEventListener('resize',fit);
-  for(let i=0;i<90;i++) parts.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,r:Math.random()*1.6+.4,v:Math.random()*.3+.05,tw:Math.random()*Math.PI*2});
-  for(let i=0;i<60;i++) drops.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,l:Math.random()*22+8,v:Math.random()*5+4,hue:Math.random()<.5?'255,30,45':'255,255,255'});
+  const landingTune = { h:'255,30,45', density:1.25, speed:1.35 };
+  const scene = createAmbient3D($('landingCanvas'), ()=>landingTune, {
+    horizon: 0.42,          // lower horizon: more sky above the wordmark
+    starScale: 7000,        // denser starfield
+    solidAlpha: 0.26,
+    gridAlpha: 0.55,
+    keepAlive: ()=> !$('landing').classList.contains('gone')
+  });
+  document.addEventListener('visibilitychange', ()=>{
+    if(!scene) return;
+    document.hidden ? scene.stop() : scene.start();
+  });
+
+  // skyline / wordmark parallax, unchanged
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function frame(){
-    if($('landing').classList.contains('gone')) return;
-    cx.clearRect(0,0,W,H);
-    parts.forEach(p=>{ p.y-=p.v; p.tw+=.03; if(p.y<-4){p.y=H+4;p.x=Math.random()*W;}
-      cx.globalAlpha=.35+Math.sin(p.tw)*.3; cx.fillStyle='#FFFFFF';
-      cx.beginPath(); cx.arc(p.x,p.y,p.r,0,7); cx.fill(); });
-    cx.globalAlpha=1;
-    drops.forEach(d=>{ d.y+=d.v; if(d.y>H){d.y=-30;d.x=Math.random()*W;}
-      const g=cx.createLinearGradient(d.x,d.y,d.x,d.y+d.l);
-      g.addColorStop(0,`rgba(${d.hue},0)`); g.addColorStop(1,`rgba(${d.hue},.5)`);
-      cx.strokeStyle=g; cx.lineWidth=1.2; cx.beginPath(); cx.moveTo(d.x,d.y); cx.lineTo(d.x,d.y+d.l); cx.stroke(); });
-    requestAnimationFrame(frame);
-  }
-  if(!reduce) frame();
-  // mouse parallax
   addEventListener('mousemove', e=>{
-    if($('landing').classList.contains('gone')||reduce) return;
+    if($('landing').classList.contains('gone') || reduce) return;
     const nx=(e.clientX/innerWidth-.5), ny=(e.clientY/innerHeight-.5);
     document.querySelectorAll('[data-parallax]').forEach(elm=>{
       const f=+elm.dataset.parallax; elm.style.transform=`translate(${nx*f}px,${ny*f*.5}px)`;
@@ -317,15 +313,14 @@ document.addEventListener('keydown', e=>{
 })();
 
 /* ================= 3D AMBIENT ENGINE =================
-   A real perspective-projected scene behind the app, not a flat particle
-   field: a scrolling grid floor receding to a horizon, a depth starfield
-   flying toward the camera, and slowly tumbling wireframe solids. Every
-   point is a {x,y,z} rotated by actual matrices and divided through by
-   depth, which is why the parallax reads as solid instead of decorative.
+   A real perspective-projected scene, not a flat particle field: a grid
+   floor receding to a horizon and scrolling toward the viewer, a starfield
+   flying through depth, and slowly tumbling wireframe solids. Every point
+   is an {x,y,z} run through rotation matrices and divided by depth, which
+   is why the parallax reads as solid rather than layered 2D.
 
-   Each view retunes hue/speed/density through VIEW_AMBIENT, so navigating
-   changes the room. The loop parks itself when the tab is hidden and
-   renders a single still frame under prefers-reduced-motion. */
+   Built as a factory so the landing page and the app shell run the same
+   scene from one implementation instead of two drifting copies. */
 const VIEW_AMBIENT = {
   dash:    {h:'255,30,45',  density:1.0, speed:1.0},
   lfg:     {h:'255,30,45',  density:1.5, speed:2.0},
@@ -336,156 +331,157 @@ const VIEW_AMBIENT = {
   profile: {h:'255,255,255',density:0.7, speed:0.5}
 };
 let ambientTune = VIEW_AMBIENT.dash;
-(function(){
-  const cv = $('ambientCanvas'); if(!cv) return;
-  const cx = cv.getContext('2d');
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const FOV = 340, FAR = 1400, HORIZON = 0.30;
+function createAmbient3D(cv, getTune, opts){
+  if(!cv) return null;
+  const cx = cv.getContext('2d');
+  const o = Object.assign({ horizon:0.30, starScale:9000, solidAlpha:0.17,
+                            gridAlpha:0.42, keepAlive:()=>true }, opts||{});
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const FOV = 340, FAR = 1400;
   let W=0, H=0, cxp=0, cyp=0, raf=null, t=0;
-  const mouse = {x:0, y:0};          // -1..1, drives a gentle camera yaw/pitch
+  const mouse = {x:0, y:0};
   let stars = [], solids = [];
 
-  /* ---- geometry: build an icosahedron and an octahedron from first
-     principles, then derive edges by distance so there is no hand-typed
-     edge table to get wrong ---- */
-  function edgesFrom(verts, tol){
-    const e = [];
+  /* geometry from first principles; edges derived by vertex distance so
+     there is no hand-typed edge table to get subtly wrong */
+  function edgesFrom(verts, len){
+    const out = [];
     for(let i=0;i<verts.length;i++)
       for(let j=i+1;j<verts.length;j++){
         const dx=verts[i][0]-verts[j][0], dy=verts[i][1]-verts[j][1], dz=verts[i][2]-verts[j][2];
-        if(Math.abs(Math.sqrt(dx*dx+dy*dy+dz*dz) - tol) < 0.001) e.push([i,j]);
+        if(Math.abs(Math.sqrt(dx*dx+dy*dy+dz*dz) - len) < 0.001) out.push([i,j]);
       }
-    return e;
+    return out;
   }
   const PHI = (1+Math.sqrt(5))/2;
-  const ICO_V = [];
-  [[0,1,PHI],[0,1,-PHI],[0,-1,PHI],[0,-1,-PHI],
-   [1,PHI,0],[1,-PHI,0],[-1,PHI,0],[-1,-PHI,0],
-   [PHI,0,1],[PHI,0,-1],[-PHI,0,1],[-PHI,0,-1]].forEach(v=>ICO_V.push(v));
+  const ICO_V = [[0,1,PHI],[0,1,-PHI],[0,-1,PHI],[0,-1,-PHI],
+                 [1,PHI,0],[1,-PHI,0],[-1,PHI,0],[-1,-PHI,0],
+                 [PHI,0,1],[PHI,0,-1],[-PHI,0,1],[-PHI,0,-1]];
   const ICO_E = edgesFrom(ICO_V, 2);
   const OCT_V = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
   const OCT_E = edgesFrom(OCT_V, Math.SQRT2);
 
   function fit(){
     const dpr = Math.min(devicePixelRatio||1, 2);
-    // measure the viewport: the canvas is fixed/inset:0 and is sized while
-    // #app may still be display:none, where clientWidth reads 0
+    // measure the viewport, not the element: these canvases are fixed/inset:0
+    // and are sized while their container may still be display:none
     W = innerWidth; H = innerHeight;
     cv.width = W*dpr; cv.height = H*dpr;
     cx.setTransform(dpr,0,0,dpr,0,0);
-    cxp = W/2; cyp = H*HORIZON;
+    cxp = W/2; cyp = H*o.horizon;
 
-    const starCount = Math.round(Math.min(150, (W*H)/9000));
-    stars = Array.from({length:starCount}, ()=>({
+    stars = Array.from({length: Math.round(Math.min(170, (W*H)/o.starScale))}, ()=>({
       x:(Math.random()-.5)*2400, y:(Math.random()-.5)*1500,
       z:Math.random()*FAR, r:Math.random()*1.5+.5
     }));
-    // kept out of the upper-left quadrant on purpose: that is where every
-    // view puts its heading, and a wireframe crossing display type is the
-    // one place this reads as noise instead of atmosphere
+    // kept out of the upper-left quadrant on purpose: every view puts its
+    // heading there, and a wireframe crossing display type is the one place
+    // this reads as noise instead of atmosphere
     solids = [
       {v:ICO_V, e:ICO_E, s:60, x: 1150, y:-280, z:1150, rx:.3, ry:.5, sx:.00042, sy:.00031},
       {v:OCT_V, e:OCT_E, s:52, x: 1020, y: 430, z: 900, rx:.9, ry:.2, sx:.00055, sy:.00040},
       {v:ICO_V, e:ICO_E, s:44, x:-1150, y: 500, z:1250, rx:.1, ry:.8, sx:.00030, sy:.00047}
     ];
   }
-  addEventListener('resize', fit);
-  addEventListener('pointermove', e=>{
-    mouse.x = (e.clientX/innerWidth - .5)*2;
-    mouse.y = (e.clientY/innerHeight - .5)*2;
-  }, {passive:true});
 
-  // perspective divide; returns null for anything at or behind the camera
   function project(x, y, z){
-    if(z <= 1) return null;
+    if(z <= 1) return null;                 // at or behind the camera
     const k = FOV/z;
     return { x: cxp + x*k, y: cyp + y*k, k };
   }
   function rot(p, ax, ay){
-    const cy=Math.cos(ay), sy=Math.sin(ay), cxr=Math.cos(ax), sxr=Math.sin(ax);
-    let [x,y,z] = p;
-    let nx = x*cy - z*sy, nz = x*sy + z*cy;          // yaw
-    let ny = y*cxr - nz*sxr; nz = y*sxr + nz*cxr;    // pitch
+    const cy=Math.cos(ay), sy=Math.sin(ay), cr=Math.cos(ax), sr=Math.sin(ax);
+    const nx = p[0]*cy - p[2]*sy;
+    let   nz = p[0]*sy + p[2]*cy;
+    const ny = p[1]*cr - nz*sr;
+    nz = p[1]*sr + nz*cr;
     return [nx, ny, nz];
   }
 
   function frame(){
-    const { h, density, speed } = ambientTune;
+    if(!o.keepAlive()){ raf = null; return; }
+    const { h, density, speed } = getTune();
     t += speed;
     cx.clearRect(0,0,W,H);
-
-    // camera drifts toward the pointer so the whole scene has parallax
     const camX = mouse.x*70, camY = mouse.y*40;
 
-    /* ---- 1. grid floor: two families of lines on the y = GROUND plane,
-       scrolled along z so the floor appears to rush toward the viewer ---- */
+    // 1. grid floor
     const GROUND = 300, STEP = 130, LANES = 9;
     cx.lineWidth = 1;
     const scroll = (t*1.6) % STEP;
-    for(let i=0;i<11;i++){                       // lines of constant z
+    for(let i=0;i<11;i++){
       const z = FAR - i*STEP + scroll;
       const a = project(-LANES*STEP - camX, GROUND - camY, z);
       const b = project( LANES*STEP - camX, GROUND - camY, z);
       if(!a || !b) continue;
-      cx.strokeStyle = `rgba(${h},${(1 - z/FAR)*0.42*density})`;
+      cx.strokeStyle = `rgba(${h},${(1 - z/FAR)*o.gridAlpha*density})`;
       cx.beginPath(); cx.moveTo(a.x,a.y); cx.lineTo(b.x,b.y); cx.stroke();
     }
-    for(let i=-LANES;i<=LANES;i++){              // lines of constant x
+    for(let i=-LANES;i<=LANES;i++){
       const near = project(i*STEP - camX, GROUND - camY, 90);
       const far  = project(i*STEP - camX, GROUND - camY, FAR);
       if(!near || !far) continue;
       const g = cx.createLinearGradient(near.x,near.y,far.x,far.y);
-      g.addColorStop(0, `rgba(${h},${0.38*density})`);
+      g.addColorStop(0, `rgba(${h},${(o.gridAlpha-0.04)*density})`);
       g.addColorStop(1, `rgba(${h},0)`);
       cx.strokeStyle = g;
       cx.beginPath(); cx.moveTo(near.x,near.y); cx.lineTo(far.x,far.y); cx.stroke();
     }
 
-    /* ---- 2. depth starfield ---- */
-    const liveStars = Math.round(stars.length*Math.min(1, density));
-    for(let i=0;i<liveStars;i++){
+    // 2. depth starfield
+    const live = Math.round(stars.length*Math.min(1, density));
+    for(let i=0;i<live;i++){
       const s = stars[i];
       s.z -= speed*2.4;
-      if(s.z < 40){ s.z = FAR; s.x = (Math.random()-.5)*2400; s.y = (Math.random()-.5)*1500; }
+      if(s.z < 40){ s.z = FAR; s.x=(Math.random()-.5)*2400; s.y=(Math.random()-.5)*1500; }
       const p = project(s.x - camX, s.y - camY, s.z);
       if(!p) continue;
-      const fade = 1 - s.z/FAR;
-      cx.fillStyle = `rgba(${h},${fade*0.65})`;
+      cx.fillStyle = `rgba(${h},${(1 - s.z/FAR)*0.65})`;
       cx.beginPath(); cx.arc(p.x, p.y, Math.max(.4, s.r*p.k*1.4), 0, 7); cx.fill();
     }
 
-    /* ---- 3. tumbling wireframe solids ---- */
-    solids.forEach(o=>{
-      o.rx += o.sx*speed*16; o.ry += o.sy*speed*16;
-      const pts = o.v.map(v=>{
-        const r = rot(v, o.rx, o.ry);
-        return project(r[0]*o.s + o.x - camX, r[1]*o.s + o.y - camY, r[2]*o.s + o.z);
+    // 3. tumbling wireframe solids
+    solids.forEach(sol=>{
+      sol.rx += sol.sx*speed*16; sol.ry += sol.sy*speed*16;
+      const pts = sol.v.map(v=>{
+        const r = rot(v, sol.rx, sol.ry);
+        return project(r[0]*sol.s + sol.x - camX, r[1]*sol.s + sol.y - camY, r[2]*sol.s + sol.z);
       });
       cx.lineWidth = 1.1;
-      cx.strokeStyle = `rgba(${h},${0.17*density})`;
+      cx.strokeStyle = `rgba(${h},${o.solidAlpha*density})`;
       cx.beginPath();
-      o.e.forEach(([i,j])=>{
-        const a=pts[i], b=pts[j];
-        if(!a || !b) return;
-        cx.moveTo(a.x,a.y); cx.lineTo(b.x,b.y);
-      });
+      sol.e.forEach(([i,j])=>{ const a=pts[i], b=pts[j]; if(a&&b){ cx.moveTo(a.x,a.y); cx.lineTo(b.x,b.y); } });
       cx.stroke();
-      cx.fillStyle = `rgba(${h},${0.30*density})`;
+      cx.fillStyle = `rgba(${h},${(o.solidAlpha+0.13)*density})`;
       pts.forEach(p=>{ if(p){ cx.beginPath(); cx.arc(p.x,p.y,1.4,0,7); cx.fill(); } });
     });
 
     raf = requestAnimationFrame(frame);
   }
 
-  function start(){ if(!raf && !reduce) raf = requestAnimationFrame(frame); }
-  function stop(){ if(raf){ cancelAnimationFrame(raf); raf = null; } }
-  document.addEventListener('visibilitychange', ()=> document.hidden ? stop() : start());
-
+  const api = {
+    start(){ if(!raf && !reduce && o.keepAlive()) raf = requestAnimationFrame(frame); },
+    stop(){ if(raf){ cancelAnimationFrame(raf); raf = null; } },
+    fit
+  };
+  addEventListener('resize', fit);
+  addEventListener('pointermove', ev=>{
+    mouse.x = (ev.clientX/innerWidth - .5)*2;
+    mouse.y = (ev.clientY/innerHeight - .5)*2;
+  }, {passive:true});
   fit();
-  if(reduce){ t = 0; const keep = requestAnimationFrame; frame(); cancelAnimationFrame(raf); raf = null; }
-  else start();
-})();
+  if(reduce){ frame(); api.stop(); }   // one still frame, no loop
+  else api.start();
+  return api;
+}
+
+/* app shell: retunes per view */
+const appScene = createAmbient3D($('ambientCanvas'), ()=>ambientTune);
+document.addEventListener('visibilitychange', ()=>{
+  if(!appScene) return;
+  document.hidden ? appScene.stop() : appScene.start();
+});
 
 /* ================= 3D TILT =================
    Cards lean toward the cursor and their inner layers ride at different
@@ -926,6 +922,45 @@ function addXPOnce(key,n,why){ if(xpOnce.has(key))return; xpOnce.add(key); addXP
 
 /* ================= TOURNAMENTS ================= */
 let LIVE_TOURS = [];
+/* ---- tournament composer (admin only) ----
+   The button is hidden for non-admins, but that is cosmetic only: the
+   "admins manage tournaments" RLS policy is what actually enforces it, so
+   a non-admin who calls this anyway just gets a rejected insert. */
+let tourGameSel = 'Valorant';
+function openTourPost(){
+  $('tpGame').innerHTML='';
+  GAMES.slice(0,6).forEach(g=>{
+    const c=el(`<button class="chip ${g.n===tourGameSel?'sel':''}">${esc(g.n)}</button>`);
+    c.onclick=()=>{tourGameSel=g.n;openTourPost();}; $('tpGame').appendChild(c);
+  });
+  if(!$('tpDate').value){
+    const d=new Date(Date.now()+7*86400000);
+    $('tpDate').value = d.toISOString().slice(0,10);
+  }
+  openOv('tourOv');
+}
+async function submitTournament(){
+  const name = $('tpName').value.trim();
+  const date = $('tpDate').value;
+  if(name.length < 4) return toast('⚠️','Name too short','GIVE THE EVENT A REAL NAME');
+  if(!date)           return toast('⚠️','Pick a date','WHEN DOES IT START?');
+  if(hasBlockedWord(name)) return toast('🚫','Blocked language','KEEP IT CLEAN');
+  const btn = $('tpSubmit'); btn.disabled = true;
+  try{
+    const row = await Backend.createTournament({
+      game: tourGameSel, name,
+      requirements: $('tpNeed').value.trim(),
+      prize: $('tpPrize').value.trim(),
+      startsAt: new Date(date+'T18:00:00').toISOString()
+    });
+    if(!row) return toast('⚠️','Could not publish','ADMIN ONLY — CHECK YOUR ACCOUNT');
+    LIVE_TOURS = [...LIVE_TOURS, row].sort((a,b)=>(a.m+a.d).localeCompare(b.m+b.d));
+    renderTours(); renderTourMini();
+    $('tpName').value=''; $('tpNeed').value=''; $('tpPrize').value='';
+    closeOv('tourOv');
+    toast('🏆','Tournament published', name.toUpperCase());
+  } finally { btn.disabled = false; }
+}
 function renderTours(){
   $('tourList').innerHTML='';
   const list = LIVE_TOURS.length ? LIVE_TOURS
@@ -1321,7 +1356,10 @@ async function initApp(){
       $('topSignOutBtn').style.display='inline-flex';
       $('enterBtn').style.display='inline-flex';
       $('dataRights').style.display='block';
-      if(row && row.is_admin) $('modBtn').style.display='inline-flex';
+      if(row && row.is_admin){
+        $('modBtn').style.display='inline-flex';
+        $('newTourBtn').style.display='inline-flex';
+      }
       // social graph + real content, all in parallel — none of these block
       // each other and every one fails soft to an empty list
       refreshBlocks(); refreshSquadmates();
