@@ -316,81 +316,175 @@ document.addEventListener('keydown', e=>{
   draw();
 })();
 
-/* ================= AMBIENT BACKGROUND =================
-   A slow constellation of drifting nodes that link up when they get close
-   and lean toward the cursor. Each view sets its own hue via VIEW_AMBIENT
-   so moving between pages visibly re-tunes the room. Pointer tracking is
-   passive and the whole loop parks itself when the tab is hidden. */
+/* ================= 3D AMBIENT ENGINE =================
+   A real perspective-projected scene behind the app, not a flat particle
+   field: a scrolling grid floor receding to a horizon, a depth starfield
+   flying toward the camera, and slowly tumbling wireframe solids. Every
+   point is a {x,y,z} rotated by actual matrices and divided through by
+   depth, which is why the parallax reads as solid instead of decorative.
+
+   Each view retunes hue/speed/density through VIEW_AMBIENT, so navigating
+   changes the room. The loop parks itself when the tab is hidden and
+   renders a single still frame under prefers-reduced-motion. */
 const VIEW_AMBIENT = {
   dash:    {h:'255,30,45',  density:1.0, speed:1.0},
-  lfg:     {h:'255,30,45',  density:1.5, speed:1.7},
-  missions:{h:'255,255,255',density:0.8, speed:0.7},
+  lfg:     {h:'255,30,45',  density:1.5, speed:2.0},
+  missions:{h:'255,255,255',density:0.8, speed:0.6},
   discover:{h:'255,71,87',  density:1.1, speed:1.2},
   hubs:    {h:'255,30,45',  density:1.2, speed:0.9},
   tours:   {h:'255,180,60', density:0.9, speed:1.1},
-  profile: {h:'255,255,255',density:0.7, speed:0.6}
+  profile: {h:'255,255,255',density:0.7, speed:0.5}
 };
 let ambientTune = VIEW_AMBIENT.dash;
 (function(){
   const cv = $('ambientCanvas'); if(!cv) return;
   const cx = cv.getContext('2d');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let W=0,H=0,nodes=[],raf=null;
-  const mouse = {x:-9999,y:-9999};
-  const MAX_DENSITY = Math.max(...Object.values(VIEW_AMBIENT).map(v=>v.density));
+
+  const FOV = 340, FAR = 1400, HORIZON = 0.30;
+  let W=0, H=0, cxp=0, cyp=0, raf=null, t=0;
+  const mouse = {x:0, y:0};          // -1..1, drives a gentle camera yaw/pitch
+  let stars = [], solids = [];
+
+  /* ---- geometry: build an icosahedron and an octahedron from first
+     principles, then derive edges by distance so there is no hand-typed
+     edge table to get wrong ---- */
+  function edgesFrom(verts, tol){
+    const e = [];
+    for(let i=0;i<verts.length;i++)
+      for(let j=i+1;j<verts.length;j++){
+        const dx=verts[i][0]-verts[j][0], dy=verts[i][1]-verts[j][1], dz=verts[i][2]-verts[j][2];
+        if(Math.abs(Math.sqrt(dx*dx+dy*dy+dz*dz) - tol) < 0.001) e.push([i,j]);
+      }
+    return e;
+  }
+  const PHI = (1+Math.sqrt(5))/2;
+  const ICO_V = [];
+  [[0,1,PHI],[0,1,-PHI],[0,-1,PHI],[0,-1,-PHI],
+   [1,PHI,0],[1,-PHI,0],[-1,PHI,0],[-1,-PHI,0],
+   [PHI,0,1],[PHI,0,-1],[-PHI,0,1],[-PHI,0,-1]].forEach(v=>ICO_V.push(v));
+  const ICO_E = edgesFrom(ICO_V, 2);
+  const OCT_V = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  const OCT_E = edgesFrom(OCT_V, Math.SQRT2);
 
   function fit(){
     const dpr = Math.min(devicePixelRatio||1, 2);
-    // measure the viewport, not the element — the canvas is fixed/inset:0 and
-    // is sized while #app is still display:none, where clientWidth reads 0
+    // measure the viewport: the canvas is fixed/inset:0 and is sized while
+    // #app may still be display:none, where clientWidth reads 0
     W = innerWidth; H = innerHeight;
     cv.width = W*dpr; cv.height = H*dpr;
     cx.setTransform(dpr,0,0,dpr,0,0);
-    // pool is sized for the busiest view so density can scale up to MAX_DENSITY
-    const base = Math.min(90, (W*H)/16000);
-    const target = Math.round(base*MAX_DENSITY);
-    nodes = Array.from({length:target}, ()=>({
-      x:Math.random()*W, y:Math.random()*H,
-      vx:(Math.random()-.5)*.22, vy:(Math.random()-.5)*.22,
-      r:Math.random()*1.6+.7
+    cxp = W/2; cyp = H*HORIZON;
+
+    const starCount = Math.round(Math.min(150, (W*H)/9000));
+    stars = Array.from({length:starCount}, ()=>({
+      x:(Math.random()-.5)*2400, y:(Math.random()-.5)*1500,
+      z:Math.random()*FAR, r:Math.random()*1.5+.5
     }));
+    // kept out of the upper-left quadrant on purpose: that is where every
+    // view puts its heading, and a wireframe crossing display type is the
+    // one place this reads as noise instead of atmosphere
+    solids = [
+      {v:ICO_V, e:ICO_E, s:60, x: 1150, y:-280, z:1150, rx:.3, ry:.5, sx:.00042, sy:.00031},
+      {v:OCT_V, e:OCT_E, s:52, x: 1020, y: 430, z: 900, rx:.9, ry:.2, sx:.00055, sy:.00040},
+      {v:ICO_V, e:ICO_E, s:44, x:-1150, y: 500, z:1250, rx:.1, ry:.8, sx:.00030, sy:.00047}
+    ];
   }
   addEventListener('resize', fit);
-  addEventListener('pointermove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; }, {passive:true});
-  addEventListener('pointerleave', ()=>{ mouse.x=mouse.y=-9999; });
+  addEventListener('pointermove', e=>{
+    mouse.x = (e.clientX/innerWidth - .5)*2;
+    mouse.y = (e.clientY/innerHeight - .5)*2;
+  }, {passive:true});
+
+  // perspective divide; returns null for anything at or behind the camera
+  function project(x, y, z){
+    if(z <= 1) return null;
+    const k = FOV/z;
+    return { x: cxp + x*k, y: cyp + y*k, k };
+  }
+  function rot(p, ax, ay){
+    const cy=Math.cos(ay), sy=Math.sin(ay), cxr=Math.cos(ax), sxr=Math.sin(ax);
+    let [x,y,z] = p;
+    let nx = x*cy - z*sy, nz = x*sy + z*cy;          // yaw
+    let ny = y*cxr - nz*sxr; nz = y*sxr + nz*cxr;    // pitch
+    return [nx, ny, nz];
+  }
 
   function frame(){
-    const {h,density,speed} = ambientTune;
+    const { h, density, speed } = ambientTune;
+    t += speed;
     cx.clearRect(0,0,W,H);
-    const live = Math.min(nodes.length, Math.round(nodes.length*(density/MAX_DENSITY)));
-    for(let i=0;i<live;i++){
-      const p = nodes[i];
-      p.x += p.vx*speed; p.y += p.vy*speed;
-      if(p.x<0||p.x>W) p.vx*=-1;
-      if(p.y<0||p.y>H) p.vy*=-1;
-      // gentle attraction toward the pointer
-      const dx=mouse.x-p.x, dy=mouse.y-p.y, d2=dx*dx+dy*dy;
-      if(d2<40000){ const f=(1-Math.sqrt(d2)/200)*.35; p.x+=dx*.0012*f*60; p.y+=dy*.0012*f*60; }
-      cx.fillStyle=`rgba(${h},.7)`;
-      cx.beginPath(); cx.arc(p.x,p.y,p.r,0,7); cx.fill();
-      for(let j=i+1;j<live;j++){
-        const q=nodes[j], ax=p.x-q.x, ay=p.y-q.y, ad2=ax*ax+ay*ay;
-        if(ad2<15000){
-          cx.strokeStyle=`rgba(${h},${(1-ad2/15000)*.28})`;
-          cx.lineWidth=1; cx.beginPath(); cx.moveTo(p.x,p.y); cx.lineTo(q.x,q.y); cx.stroke();
-        }
-      }
+
+    // camera drifts toward the pointer so the whole scene has parallax
+    const camX = mouse.x*70, camY = mouse.y*40;
+
+    /* ---- 1. grid floor: two families of lines on the y = GROUND plane,
+       scrolled along z so the floor appears to rush toward the viewer ---- */
+    const GROUND = 300, STEP = 130, LANES = 9;
+    cx.lineWidth = 1;
+    const scroll = (t*1.6) % STEP;
+    for(let i=0;i<11;i++){                       // lines of constant z
+      const z = FAR - i*STEP + scroll;
+      const a = project(-LANES*STEP - camX, GROUND - camY, z);
+      const b = project( LANES*STEP - camX, GROUND - camY, z);
+      if(!a || !b) continue;
+      cx.strokeStyle = `rgba(${h},${(1 - z/FAR)*0.42*density})`;
+      cx.beginPath(); cx.moveTo(a.x,a.y); cx.lineTo(b.x,b.y); cx.stroke();
     }
+    for(let i=-LANES;i<=LANES;i++){              // lines of constant x
+      const near = project(i*STEP - camX, GROUND - camY, 90);
+      const far  = project(i*STEP - camX, GROUND - camY, FAR);
+      if(!near || !far) continue;
+      const g = cx.createLinearGradient(near.x,near.y,far.x,far.y);
+      g.addColorStop(0, `rgba(${h},${0.38*density})`);
+      g.addColorStop(1, `rgba(${h},0)`);
+      cx.strokeStyle = g;
+      cx.beginPath(); cx.moveTo(near.x,near.y); cx.lineTo(far.x,far.y); cx.stroke();
+    }
+
+    /* ---- 2. depth starfield ---- */
+    const liveStars = Math.round(stars.length*Math.min(1, density));
+    for(let i=0;i<liveStars;i++){
+      const s = stars[i];
+      s.z -= speed*2.4;
+      if(s.z < 40){ s.z = FAR; s.x = (Math.random()-.5)*2400; s.y = (Math.random()-.5)*1500; }
+      const p = project(s.x - camX, s.y - camY, s.z);
+      if(!p) continue;
+      const fade = 1 - s.z/FAR;
+      cx.fillStyle = `rgba(${h},${fade*0.65})`;
+      cx.beginPath(); cx.arc(p.x, p.y, Math.max(.4, s.r*p.k*1.4), 0, 7); cx.fill();
+    }
+
+    /* ---- 3. tumbling wireframe solids ---- */
+    solids.forEach(o=>{
+      o.rx += o.sx*speed*16; o.ry += o.sy*speed*16;
+      const pts = o.v.map(v=>{
+        const r = rot(v, o.rx, o.ry);
+        return project(r[0]*o.s + o.x - camX, r[1]*o.s + o.y - camY, r[2]*o.s + o.z);
+      });
+      cx.lineWidth = 1.1;
+      cx.strokeStyle = `rgba(${h},${0.17*density})`;
+      cx.beginPath();
+      o.e.forEach(([i,j])=>{
+        const a=pts[i], b=pts[j];
+        if(!a || !b) return;
+        cx.moveTo(a.x,a.y); cx.lineTo(b.x,b.y);
+      });
+      cx.stroke();
+      cx.fillStyle = `rgba(${h},${0.30*density})`;
+      pts.forEach(p=>{ if(p){ cx.beginPath(); cx.arc(p.x,p.y,1.4,0,7); cx.fill(); } });
+    });
+
     raf = requestAnimationFrame(frame);
   }
-  function start(){ if(!raf && !reduce) raf=requestAnimationFrame(frame); }
-  function stop(){ if(raf){ cancelAnimationFrame(raf); raf=null; } }
+
+  function start(){ if(!raf && !reduce) raf = requestAnimationFrame(frame); }
+  function stop(){ if(raf){ cancelAnimationFrame(raf); raf = null; } }
   document.addEventListener('visibilitychange', ()=> document.hidden ? stop() : start());
+
   fit();
-  if(reduce){ // draw one static frame so the texture is still there
-    const {h}=ambientTune;
-    nodes.forEach(p=>{ cx.fillStyle=`rgba(${h},.35)`; cx.beginPath(); cx.arc(p.x,p.y,p.r,0,7); cx.fill(); });
-  } else start();
+  if(reduce){ t = 0; const keep = requestAnimationFrame; frame(); cancelAnimationFrame(raf); raf = null; }
+  else start();
 })();
 
 /* ================= 3D TILT =================
