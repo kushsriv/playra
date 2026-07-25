@@ -233,6 +233,7 @@
           <h2>Tournament Hub</h2>
           <p>Rosters recruiting, scrims scheduling, prize pools live. Register solo and get drafted, or bring your clan.</p>
         </div>
+        <button class="btn primary" id="newTourBtn" style="display:none" onclick="openTourPost()">+ NEW TOURNAMENT</button>
       </div>
       <div id="tourList"></div>
     </section>
@@ -383,6 +384,29 @@
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeOv('missionOv')">CANCEL</button>
       <button class="btn primary" id="mpSubmit" onclick="submitMission()">POST MISSION →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TOURNAMENT COMPOSER (admins only) ============ -->
+<div class="overlay" id="tourOv">
+  <div class="panel modal">
+    <div class="eyebrow" style="margin-bottom:14px">ORGANISER</div>
+    <h2>Publish a tournament</h2>
+    <p class="m-sub">Only admins can publish — tournaments advertise prize money, so this is deliberately not open to every account.</p>
+    <label class="f-label">Name</label>
+    <input class="f-input" id="tpName" maxlength="70" placeholder="e.g. Mumbai Ascension Cup">
+    <label class="f-label">Requirements</label>
+    <input class="f-input" id="tpNeed" maxlength="90" placeholder="e.g. 2 rosters recruiting · Immortal+">
+    <label class="f-label">Prize pool</label>
+    <input class="f-input" id="tpPrize" maxlength="30" placeholder="e.g. ₹1,00,000">
+    <label class="f-label">Starts on</label>
+    <input class="f-input" id="tpDate" type="date">
+    <label class="f-label">Game</label>
+    <div class="chip-cloud" id="tpGame"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeOv('tourOv')">CANCEL</button>
+      <button class="btn primary" id="tpSubmit" onclick="submitTournament()">PUBLISH →</button>
     </div>
   </div>
 </div>

@@ -190,6 +190,26 @@ const Backend = (() => {
       });
     }catch(e){ console.warn('[backend] fetchTournaments failed', e); return []; }
   }
+  // Admin-only by RLS ("admins manage tournaments"). Surfacing this in the
+  // app matters because without it the tournaments table can only ever be
+  // populated by hand in the SQL editor, so the page stays permanently empty.
+  async function createTournament({ game, name, requirements, prize, startsAt }){
+    if(!enabled) return null;
+    const user = currentUser();
+    if(!user) return null;
+    try{
+      const { data, error } = await client.from('tournaments')
+        .insert({ organiser_id:user.id, game, name, requirements:requirements||'',
+                  prize:prize||'', starts_at:startsAt })
+        .select().single();
+      if(error) throw error;
+      const d = new Date(data.starts_at);
+      return { id:data.id, game:data.game, name:data.name, need:data.requirements,
+               prize:data.prize, d:String(d.getDate()).padStart(2,'0'),
+               m:d.toLocaleString('en',{month:'short'}).toUpperCase(), live:true };
+    }catch(e){ console.warn('[backend] createTournament failed', e); return null; }
+  }
+
   async function registerTournament(id){
     if(!enabled) return false;
     const user = currentUser();
@@ -449,7 +469,7 @@ const Backend = (() => {
     awardXp, unlockAchievement,
     joinSquadSession, fetchSquadmateIds,
     fetchMissions, insertMission, acceptMission, subscribeMissions,
-    fetchTournaments, registerTournament,
+    fetchTournaments, registerTournament, createTournament,
     fetchBlocks, blockUser, unblockUser,
     fetchReportQueue, banUser,
     exportMyData, deleteMyAccount, reportClientError
