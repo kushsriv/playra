@@ -179,12 +179,32 @@ function toast(ico, title, desc, cls=''){
   $('toasts').appendChild(t); Sfx.ping();
   setTimeout(()=>{ t.classList.add('out'); setTimeout(()=>t.remove(),350); }, 4200);
 }
-function addXP(n, why){
-  S.xp += n; toast('✦',`+${n} XP`, why.toUpperCase(),'xp'); Sfx.xp();
-  while(S.xp >= S.xpNeed){ S.xp -= S.xpNeed; S.level++; S.xpNeed = Math.round(S.xpNeed*1.35);
-    $('lvlTxt').textContent = `LEVEL ${S.level}`; const f=$('lvlFlash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); Sfx.lvl();
+/* XP is server-authoritative whenever a backend is configured: the client
+   asks award_xp() for the award and adopts whatever level/xp it hands back,
+   rather than keeping its own running total (which anyone could edit in
+   devtools). `key` makes an award one-shot — replays are no-ops server-side.
+   Guest mode has no server to ask, so it keeps the original local maths. */
+function levelUpFlash(){
+  const t=$('lvlTxt'); if(t) t.textContent = `LEVEL ${S.level}`;
+  const f=$('lvlFlash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); Sfx.lvl();
+}
+function addXP(n, why, key){
+  const signedIn = Backend.enabled && Backend.currentUser();
+  if(!signedIn){
+    S.xp += n; toast('✦',`+${n} XP`, why.toUpperCase(),'xp'); Sfx.xp();
+    while(S.xp >= S.xpNeed){ S.xp -= S.xpNeed; S.level++; S.xpNeed = Math.round(S.xpNeed*1.35); levelUpFlash(); }
+    renderXP(); saveState();
+    return;
   }
-  renderXP(); saveState();
+  const before = S.level;
+  Backend.awardXp(n, why, key).then(row=>{
+    if(!row) return;              // rejected (cap, ban, replayed key) — stay quiet
+    if(row.xp === S.xp && row.level === S.level) return;  // already awarded
+    S.level = row.level; S.xp = row.xp; S.xpNeed = row.xp_need;
+    toast('✦',`+${n} XP`, why.toUpperCase(),'xp'); Sfx.xp();
+    if(S.level > before) levelUpFlash();
+    renderXP();
+  });
 }
 function renderXP(){
   $('xpFill').style.width = Math.min(100, S.xp/S.xpNeed*100)+'%';
@@ -192,15 +212,23 @@ function renderXP(){
   $('lvlNum').textContent=S.level; $('sideLvl').textContent=S.level; $('gcLvl').textContent=S.level;
 }
 function unlockAch(id, nm){
-  if(S.achievements.has(id)) return; S.achievements.add(id);
-  toast('🏅','Achievement unlocked', nm.toUpperCase(),'ach-t'); renderAch(); saveState();
+  if(S.achievements.has(id)) return;
+  S.achievements.add(id);
+  toast('🏅','Achievement unlocked', nm.toUpperCase(),'ach-t'); renderAch();
+  // achievements are server-owned too; saveProfile no longer carries them
+  if(Backend.enabled && Backend.currentUser()) Backend.unlockAchievement(id);
+  else saveState();
 }
 
 /* ================= NAV ================= */
 const VIEW_NAMES = {dash:'COMMAND CENTER', lfg:'LFG RADAR', missions:'MISSION MARKETPLACE', discover:'DISCOVER', hubs:'GAME HUBS', tours:'TOURNAMENT HUB', profile:'GAMER CARD'};
 function go(v){
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
-  $('view-'+v).classList.add('on');
+  const view = $('view-'+v);
+  // restart the entrance choreography even when re-entering the same view
+  view.classList.remove('on'); void view.offsetWidth; view.classList.add('on');
+  document.documentElement.dataset.view = v;
+  if(typeof VIEW_AMBIENT!=='undefined' && VIEW_AMBIENT[v]) ambientTune = VIEW_AMBIENT[v];
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===v));
   $('crumbName').textContent = VIEW_NAMES[v]; Sfx.open();
   window.scrollTo({top:0, behavior:'smooth'});
@@ -288,13 +316,96 @@ document.addEventListener('keydown', e=>{
   draw();
 })();
 
-/* ================= 3D TILT ================= */
+/* ================= AMBIENT BACKGROUND =================
+   A slow constellation of drifting nodes that link up when they get close
+   and lean toward the cursor. Each view sets its own hue via VIEW_AMBIENT
+   so moving between pages visibly re-tunes the room. Pointer tracking is
+   passive and the whole loop parks itself when the tab is hidden. */
+const VIEW_AMBIENT = {
+  dash:    {h:'255,30,45',  density:1.0, speed:1.0},
+  lfg:     {h:'255,30,45',  density:1.5, speed:1.7},
+  missions:{h:'255,255,255',density:0.8, speed:0.7},
+  discover:{h:'255,71,87',  density:1.1, speed:1.2},
+  hubs:    {h:'255,30,45',  density:1.2, speed:0.9},
+  tours:   {h:'255,180,60', density:0.9, speed:1.1},
+  profile: {h:'255,255,255',density:0.7, speed:0.6}
+};
+let ambientTune = VIEW_AMBIENT.dash;
+(function(){
+  const cv = $('ambientCanvas'); if(!cv) return;
+  const cx = cv.getContext('2d');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W=0,H=0,nodes=[],raf=null;
+  const mouse = {x:-9999,y:-9999};
+  const MAX_DENSITY = Math.max(...Object.values(VIEW_AMBIENT).map(v=>v.density));
+
+  function fit(){
+    const dpr = Math.min(devicePixelRatio||1, 2);
+    // measure the viewport, not the element — the canvas is fixed/inset:0 and
+    // is sized while #app is still display:none, where clientWidth reads 0
+    W = innerWidth; H = innerHeight;
+    cv.width = W*dpr; cv.height = H*dpr;
+    cx.setTransform(dpr,0,0,dpr,0,0);
+    // pool is sized for the busiest view so density can scale up to MAX_DENSITY
+    const base = Math.min(90, (W*H)/16000);
+    const target = Math.round(base*MAX_DENSITY);
+    nodes = Array.from({length:target}, ()=>({
+      x:Math.random()*W, y:Math.random()*H,
+      vx:(Math.random()-.5)*.22, vy:(Math.random()-.5)*.22,
+      r:Math.random()*1.6+.7
+    }));
+  }
+  addEventListener('resize', fit);
+  addEventListener('pointermove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; }, {passive:true});
+  addEventListener('pointerleave', ()=>{ mouse.x=mouse.y=-9999; });
+
+  function frame(){
+    const {h,density,speed} = ambientTune;
+    cx.clearRect(0,0,W,H);
+    const live = Math.min(nodes.length, Math.round(nodes.length*(density/MAX_DENSITY)));
+    for(let i=0;i<live;i++){
+      const p = nodes[i];
+      p.x += p.vx*speed; p.y += p.vy*speed;
+      if(p.x<0||p.x>W) p.vx*=-1;
+      if(p.y<0||p.y>H) p.vy*=-1;
+      // gentle attraction toward the pointer
+      const dx=mouse.x-p.x, dy=mouse.y-p.y, d2=dx*dx+dy*dy;
+      if(d2<40000){ const f=(1-Math.sqrt(d2)/200)*.35; p.x+=dx*.0012*f*60; p.y+=dy*.0012*f*60; }
+      cx.fillStyle=`rgba(${h},.7)`;
+      cx.beginPath(); cx.arc(p.x,p.y,p.r,0,7); cx.fill();
+      for(let j=i+1;j<live;j++){
+        const q=nodes[j], ax=p.x-q.x, ay=p.y-q.y, ad2=ax*ax+ay*ay;
+        if(ad2<15000){
+          cx.strokeStyle=`rgba(${h},${(1-ad2/15000)*.28})`;
+          cx.lineWidth=1; cx.beginPath(); cx.moveTo(p.x,p.y); cx.lineTo(q.x,q.y); cx.stroke();
+        }
+      }
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  function start(){ if(!raf && !reduce) raf=requestAnimationFrame(frame); }
+  function stop(){ if(raf){ cancelAnimationFrame(raf); raf=null; } }
+  document.addEventListener('visibilitychange', ()=> document.hidden ? stop() : start());
+  fit();
+  if(reduce){ // draw one static frame so the texture is still there
+    const {h}=ambientTune;
+    nodes.forEach(p=>{ cx.fillStyle=`rgba(${h},.35)`; cx.beginPath(); cx.arc(p.x,p.y,p.r,0,7); cx.fill(); });
+  } else start();
+})();
+
+/* ================= 3D TILT =================
+   Cards lean toward the cursor and their inner layers ride at different
+   depths, so the card reads as a stack of planes rather than a flat image. */
+const TILT_SEL = '.tilt,.rec-card,.hub-card,.mission-card,.lf-box,.tour-card';
 document.addEventListener('mousemove', e=>{
-  const c = e.target.closest('.tilt');
-  document.querySelectorAll('.tilt').forEach(t=>{ if(t!==c) t.style.transform=''; });
+  const c = e.target.closest(TILT_SEL);
+  document.querySelectorAll(TILT_SEL).forEach(t=>{
+    if(t!==c && t.style.transform) t.style.transform='';
+  });
   if(!c) return;
   const r=c.getBoundingClientRect(), x=(e.clientX-r.left)/r.width-.5, y=(e.clientY-r.top)/r.height-.5;
-  c.style.transform=`perspective(900px) rotateY(${x*4}deg) rotateX(${-y*4}deg)`;
+  const deg = c.classList.contains('tilt') ? 4 : 7;
+  c.style.transform=`perspective(900px) rotateY(${x*deg}deg) rotateX(${-y*deg}deg) translateZ(0)`;
 });
 
 /* ================= CURSOR SPOTLIGHT =================
@@ -309,6 +420,103 @@ document.addEventListener('pointermove', e=>{
   const r = c.getBoundingClientRect();
   c.style.setProperty('--mx', `${((e.clientX-r.left)/r.width*100).toFixed(1)}%`);
   c.style.setProperty('--my', `${((e.clientY-r.top)/r.height*100).toFixed(1)}%`);
+});
+
+/* ================= MODERATION QUEUE (admins) =================
+   The button is hidden for non-admins, but that is only cosmetic: both
+   admin_report_queue() and set_ban() check is_admin server-side, so a
+   non-admin who calls them anyway just gets FORBIDDEN. */
+async function openModQueue(){
+  openOv('modOv');
+  $('modQueue').innerHTML = '<div class="empty"><div class="e-ico">📡</div><b>Loading queue…</b></div>';
+  const rows = await Backend.fetchReportQueue();
+  if(!rows.length){
+    $('modQueue').innerHTML = '<div class="empty"><div class="e-ico">✅</div><b>Queue is clear</b>No open reports.</div>';
+    return;
+  }
+  $('modQueue').innerHTML = '';
+  rows.forEach(r=>{
+    const banned = r.reported_banned_until && new Date(r.reported_banned_until) > new Date();
+    const c = el(`<div class="lfg-card panel" style="margin-bottom:10px">
+      <div class="av">${esc((r.reported_name||'?')[0])}</div>
+      <div>
+        <div class="lfg-title">${esc(r.reported_name||'Unknown')} ${banned?'<span class="tag mg">BANNED</span>':''}</div>
+        <div class="lfg-meta">
+          <span class="tag cy">${esc(r.reason)}</span>
+          <span class="tag">${r.reports_against} REPORT${r.reports_against===1?'':'S'}</span>
+          <span class="tag">BY ${esc(r.reporter_name||'—')}</span>
+        </div>
+        <div style="color:var(--ink-mute);font-size:13px;margin-top:8px">${esc(r.context||'')}</div>
+      </div>
+      <div class="lfg-right">
+        <button class="btn sm ghost ban7">BAN 7D</button>
+        <button class="btn sm ghost unban" style="${banned?'':'display:none'}">UNBAN</button>
+      </div></div>`);
+    c.querySelector('.ban7').onclick = async ()=>{
+      if(await Backend.banUser(r.reported_id, 7)){ toast('🔨','Banned', `${esc(r.reported_name).toUpperCase()} — 7 DAYS`); openModQueue(); }
+      else toast('⚠️','Could not ban','ADMIN ONLY');
+    };
+    c.querySelector('.unban').onclick = async ()=>{
+      if(await Backend.banUser(r.reported_id, null)){ toast('↩️','Ban lifted', esc(r.reported_name).toUpperCase()); openModQueue(); }
+    };
+    $('modQueue').appendChild(c);
+  });
+}
+
+/* ================= DATA RIGHTS ================= */
+async function downloadMyData(){
+  const data = await Backend.exportMyData();
+  if(!data) return toast('⚠️','Export failed','TRY AGAIN IN A MOMENT');
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `playra-data-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('📦','Data exported','DOWNLOADED AS JSON');
+}
+async function confirmDeleteAccount(){
+  if(!confirm('Delete your PLAYRA account?\n\nThis permanently removes your profile, posts, missions, squad history and endorsements. It cannot be undone.')) return;
+  if(prompt('Type DELETE to confirm') !== 'DELETE') return toast('↩️','Cancelled','ACCOUNT NOT DELETED');
+  if(await Backend.deleteMyAccount()){
+    try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+    alert('Your account has been deleted.');
+    location.reload();
+  } else toast('⚠️','Could not delete','TRY AGAIN IN A MOMENT');
+}
+
+/* ================= SOCIAL GRAPH =================
+   SQUADMATES gates the endorse button (the database enforces the same rule,
+   this just avoids offering an action that would be rejected). BLOCKED
+   filters people out of every feed. Both are refreshed on sign-in and
+   whenever they change. */
+let SQUADMATES = new Set();
+let BLOCKED = new Set();
+async function refreshSquadmates(){
+  if(!(Backend.enabled && Backend.currentUser())) return;
+  SQUADMATES = await Backend.fetchSquadmateIds();
+  renderRecs();
+}
+async function refreshBlocks(){
+  if(!(Backend.enabled && Backend.currentUser())) return;
+  BLOCKED = await Backend.fetchBlocks();
+  renderRecs(); renderLfg();
+}
+async function blockAndRefresh(id, name){
+  if(!await Backend.blockUser(id)) return toast('⚠️','Could not block','TRY AGAIN IN A MOMENT');
+  BLOCKED.add(id);
+  toast('🚫','Blocked', `${String(name).toUpperCase()} IS HIDDEN FROM YOUR FEEDS`);
+  REAL_PROFILES = REAL_PROFILES.filter(p=>p.id!==id);
+  renderRecs(); renderLfg(); renderDeck();
+}
+
+/* ================= ERROR REPORTING =================
+   Without this the only signal that production is broken is a user
+   complaining. Failures here are swallowed by design. */
+addEventListener('error', e=>{
+  Backend.reportClientError?.(e.message, e.error?.stack || '', location.href);
+});
+addEventListener('unhandledrejection', e=>{
+  Backend.reportClientError?.('unhandledrejection: '+(e.reason?.message||e.reason), e.reason?.stack||'', location.href);
 });
 
 /* ================= REAL MATCHMAKING ================= */
@@ -332,7 +540,7 @@ function profileToSwipeCard(p){
 /* ================= RENDER: DASHBOARD ================= */
 function renderRecs(){
   $('recGrid').innerHTML='';
-  const real = REAL_PROFILES.map(p=>({
+  const real = REAL_PROFILES.filter(p=>!BLOCKED.has(p.id)).map(p=>({
     n:p.name||'Operator', rank:((p.games&&p.games[0])||'Operator')+' · LVL '+(p.level||1),
     compat:computeCompat(S,p), id:p.id,
     tags:[...(p.games||[]).slice(0,1).map(g=>['cy',g.toUpperCase()]),...(p.styles||[]).slice(0,1).map(s=>['mg',s.toUpperCase()]),...(p.langs||[]).slice(0,1).map(l=>['am',l.toUpperCase()])]
@@ -346,7 +554,8 @@ function renderRecs(){
       <div class="rec-tags">${r.tags.map(tagHtml).join('')}</div>
       <div style="display:flex;gap:8px">
         <button class="btn sm primary invite-btn" style="flex:1">INVITE TO SQUAD</button>
-        <button class="btn sm ghost endorse-btn" style="${r.id?'':'display:none'}">ENDORSE</button>
+        <button class="btn sm ghost endorse-btn" style="${r.id && SQUADMATES.has(r.id)?'':'display:none'}">ENDORSE</button>
+        <button class="btn sm ghost block-btn" title="Block" style="${r.id?'':'display:none'};flex:none;padding:7px 10px">🚫</button>
         <button class="btn sm ghost report-btn" title="Report" style="${r.id?'':'display:none'};color:var(--danger);flex:none;padding:7px 10px">⚑</button>
       </div>
     </div>`);
@@ -355,7 +564,10 @@ function renderRecs(){
     card.querySelector('.rr').textContent = r.rank;
     card.querySelector('.invite-btn').onclick=()=>inviteRec(r.n);
     if(r.id){
-      card.querySelector('.endorse-btn').onclick=()=>openEndorsePicker(r.id, r.n);
+      // endorse is only offered to people you've actually squadded with —
+      // the database enforces the same rule, this keeps the UI honest
+      if(SQUADMATES.has(r.id)) card.querySelector('.endorse-btn').onclick=()=>openEndorsePicker(r.id, r.n);
+      card.querySelector('.block-btn').onclick=()=>blockAndRefresh(r.id, r.n);
       card.querySelector('.report-btn').onclick=()=>openReportPicker(r.id, r.n, 'Reported from Command Center recs');
     }
     $('recGrid').appendChild(card);
@@ -384,7 +596,9 @@ function completeQuest(id){
 }
 function renderTourMini(){
   $('tourMini').innerHTML='';
-  TOURS.slice(0,3).forEach((t,i)=>{
+  const src = LIVE_TOURS.length ? LIVE_TOURS
+            : (Backend.enabled && Backend.currentUser() ? [] : TOURS);
+  src.slice(0,3).forEach((t,i)=>{
     const colors=['#FF1E2D','#FFFFFF','#FF4757'];
     $('tourMini').appendChild(el(`<div class="radar-blip-row" onclick="go('tours')">
       <span class="b" style="background:${colors[i]};box-shadow:0 0 8px ${colors[i]}"></span>
@@ -460,25 +674,90 @@ setInterval(()=>{
   }
 },1000);
 
-/* ================= MISSIONS ================= */
+/* ================= MISSIONS =================
+   Real rows from the missions table when a backend is configured; the
+   hardcoded MISSIONS array is now only the guest-mode / empty-feed sample. */
+let LIVE_MISSIONS = [];
+const seenMissionIds = new Set();
+function missionList(){
+  const live = LIVE_MISSIONS.filter(m=>!BLOCKED.has(m.userId));
+  return live.length ? live : (Backend.enabled && Backend.currentUser() ? live : MISSIONS);
+}
 function renderMissions(){
   $('missionGrid').innerHTML='';
-  MISSIONS.forEach(m=>{
+  const list = missionList();
+  if(!list.length){
+    $('missionGrid').innerHTML = `<div class="empty" style="grid-column:1/-1">
+      <div class="e-ico">🛰️</div><b>No missions posted yet</b>
+      Be the first — post what you're trying to accomplish and let the right players find you.</div>`;
+    return;
+  }
+  list.forEach(m=>{
     const g=gameBy(m.game);
     const c=el(`<div class="panel mission-card" style="--accent:${g.c}">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span class="tag" style="color:${g.c};border-color:${g.c}55">${m.game.toUpperCase()}</span>
+        <span class="tag" style="color:${g.c};border-color:${g.c}55">${esc(m.game.toUpperCase())}</span>
         <div class="diff" title="Difficulty">${Array.from({length:5},(_,i)=>`<i class="${i<m.diff?'on':''}"></i>`).join('')}</div>
       </div>
-      <div class="m-goal">${m.goal}</div>
-      <div class="m-desc">${m.desc}</div>
+      <div class="m-goal">${esc(m.goal)}</div>
+      <div class="m-desc">${esc(m.desc||'')}</div>
       <div class="m-foot">
-        <div class="m-poster"><div class="av">${m.by[0]}</div>${m.by} · <span class="mono" style="color:var(--lime)">★${m.rep}</span></div>
+        <div class="m-poster"><div class="av">${esc((m.by||'?')[0])}</div>${esc(m.by||'Operator')}${m.live?'':` · <span class="mono" style="color:var(--lime)">★${esc(m.rep)}</span>`}</div>
         <button class="btn sm ghost">ACCEPT →</button>
       </div></div>`);
-    c.querySelector('.btn').onclick=()=>openRoom({game:m.game,title:m.goal,slots:4,filled:2});
+    c.querySelector('.btn').onclick=()=>{
+      if(m.id) Backend.acceptMission(m.id);
+      addXP(XP_EVENTS.join, `Accepted: ${m.goal.slice(0,28)}`, m.id?`mission:${m.id}`:undefined);
+      openRoom({game:m.game,title:m.goal,slots:4,filled:2});
+    };
     $('missionGrid').appendChild(c);
   });
+}
+function addMission(m){
+  if(m.id){ if(seenMissionIds.has(m.id)) return; seenMissionIds.add(m.id); }
+  LIVE_MISSIONS.unshift(m); renderMissions();
+}
+/* ---- mission composer ---- */
+let missionGameSel = 'Valorant', missionDiffSel = 3;
+function openMissionPost(){
+  $('mpGame').innerHTML=''; $('mpDiff').innerHTML='';
+  GAMES.slice(0,6).forEach(g=>{
+    const c=el(`<button class="chip ${g.n===missionGameSel?'sel':''}">${esc(g.n)}</button>`);
+    c.onclick=()=>{missionGameSel=g.n;openMissionPost();}; $('mpGame').appendChild(c);
+  });
+  [1,2,3,4,5].forEach(d=>{
+    const c=el(`<button class="chip ${d===missionDiffSel?'sel':''}">${'●'.repeat(d)}</button>`);
+    c.onclick=()=>{missionDiffSel=d;openMissionPost();}; $('mpDiff').appendChild(c);
+  });
+  openOv('missionOv');
+}
+let missionPosting = false;
+async function submitMission(){
+  const goal = $('mpGoal').value.trim();
+  const desc = $('mpDesc').value.trim();
+  if(goal.length < 6) return toast('⚠️','Goal too short','SAY WHAT YOU ARE TRYING TO ACCOMPLISH');
+  if(hasBlockedWord(goal) || hasBlockedWord(desc)) return toast('🚫','Blocked language','KEEP IT CLEAN');
+  if(missionPosting) return;
+  missionPosting = true;
+  const btn = $('mpSubmit'); btn.disabled = true;
+  try{
+    if(Backend.enabled && Backend.currentUser()){
+      const res = await Backend.insertMission({ game:missionGameSel, goal, description:desc,
+                                                difficulty:missionDiffSel, authorName:S.name });
+      if(res === 'rate_limited') return toast('⏳','Slow down','TOO MANY MISSIONS IN A MINUTE');
+      if(res === 'blocked')      return toast('🚫','Blocked language','KEEP IT CLEAN');
+      if(!res)                   return toast('⚠️','Could not post','TRY AGAIN IN A MOMENT');
+      addMission(res);
+    } else {
+      addMission({ game:missionGameSel, goal, desc, diff:missionDiffSel, by:S.name, rep:'—' });
+    }
+    $('mpGoal').value=''; $('mpDesc').value='';
+    closeOv('missionOv');
+    toast('🛰️','Mission posted', goal.slice(0,40).toUpperCase());
+    addXP(XP_EVENTS.post, 'Posted a mission');
+  } finally {
+    missionPosting = false; btn.disabled = false;
+  }
 }
 
 /* ================= GAME CAROUSEL ================= */
@@ -552,16 +831,31 @@ const xpOnce = new Set();
 function addXPOnce(key,n,why){ if(xpOnce.has(key))return; xpOnce.add(key); addXP(n,why); }
 
 /* ================= TOURNAMENTS ================= */
+let LIVE_TOURS = [];
 function renderTours(){
   $('tourList').innerHTML='';
-  TOURS.forEach(t=>{
+  const list = LIVE_TOURS.length ? LIVE_TOURS
+             : (Backend.enabled && Backend.currentUser() ? [] : TOURS);
+  if(!list.length){
+    $('tourList').innerHTML = `<div class="empty">
+      <div class="e-ico">🏆</div><b>No tournaments scheduled</b>
+      Organisers publish events here. Check back soon.</div>`;
+    return;
+  }
+  list.forEach(t=>{
     const g=gameBy(t.game);
     const c=el(`<div class="panel tour-card" style="--accent:${g.c}">
       <div class="tour-date"><b>${t.d}</b><span>${t.m}</span></div>
-      <div><div class="lfg-title">${t.name}</div>
-        <div class="lfg-meta"><span class="tag" style="color:${g.c};border-color:${g.c}55">${t.game.toUpperCase()}</span><span class="tag">${t.need}</span></div></div>
-      <div class="lfg-right"><div class="prize">${t.prize}</div><button class="btn sm hot">REGISTER</button></div></div>`);
-    c.querySelector('.btn').onclick=()=>{ addXPOnce('tour_'+t.name, XP_EVENTS.register, `Registered: ${t.name}`); unlockAch('squad','Squad Leader'); };
+      <div><div class="lfg-title">${esc(t.name)}</div>
+        <div class="lfg-meta"><span class="tag" style="color:${g.c};border-color:${g.c}55">${esc(t.game.toUpperCase())}</span><span class="tag">${esc(t.need)}</span></div></div>
+      <div class="lfg-right"><div class="prize">${esc(t.prize)}</div><button class="btn sm hot">REGISTER</button></div></div>`);
+    c.querySelector('.btn').onclick=async ()=>{
+      if(t.id && !await Backend.registerTournament(t.id))
+        return toast('⚠️','Could not register','TRY AGAIN IN A MOMENT');
+      toast('🏆','Registered', esc(t.name).toUpperCase());
+      addXP(XP_EVENTS.register, `Registered: ${t.name}`, t.id?`tour:${t.id}`:'tour_'+t.name);
+      unlockAch('squad','Squad Leader');
+    };
     $('tourList').appendChild(c);
   });
 }
@@ -724,6 +1018,9 @@ function openRoom(p){
   if(roomIsLive){
     $('roomMembers').innerHTML='<div class="rm waiting"><div class="av">📡</div><div class="rm-n">Connecting…</div><div class="rm-s">LINKING ROOM</div></div>';
     Backend.joinRoom(p.id, {name:S.name, avatar:S.avatar, discord:S.discord||''}, renderRoomMembers);
+    // Durable record of who actually squadded together. Realtime presence is
+    // ephemeral — this row is what later lets these two endorse each other.
+    Backend.joinSquadSession(p.id, S.name).then(()=>refreshSquadmates());
   } else {
     const names=['Vex','Nyx','Draco', S.name];
     $('roomMembers').innerHTML = names.map((n,i)=>`<div class="rm ${i<2?'ready':''}" id="rm-${i}">
@@ -929,6 +1226,17 @@ async function initApp(){
       $('signOutBtn').style.display='inline-block';
       $('topSignOutBtn').style.display='inline-flex';
       $('enterBtn').style.display='inline-flex';
+      $('dataRights').style.display='block';
+      if(row && row.is_admin) $('modBtn').style.display='inline-flex';
+      // social graph + real content, all in parallel — none of these block
+      // each other and every one fails soft to an empty list
+      refreshBlocks(); refreshSquadmates();
+      Backend.fetchMissions().then(ms=>{
+        ms.forEach(m=>seenMissionIds.add(m.id));
+        LIVE_MISSIONS = ms; renderMissions();
+      });
+      Backend.subscribeMissions(addMission);
+      Backend.fetchTournaments().then(ts=>{ LIVE_TOURS = ts; renderTours(); renderTourMini(); });
     } else {
       // Discord is the only way in when a backend exists — no guest
       // shortcut, so a Gamer Card always maps to a real signed-in account

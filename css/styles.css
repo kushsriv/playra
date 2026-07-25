@@ -204,6 +204,13 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 /* ============ APP SHELL ============ */
 #app{position:relative;z-index:1;display:none;min-height:100vh}
 #app.on{display:grid;grid-template-columns:244px 1fr;animation:appIn .8s ease both}
+/* live constellation layer — sits behind the whole app, painted by the
+   ambient engine in app.js and re-tuned per view */
+#ambientCanvas{
+  position:fixed;inset:0;width:100%;height:100%;
+  z-index:0;pointer-events:none;opacity:.85;
+  transition:opacity .8s ease;
+}
 @keyframes appIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:scale(1)}}
 
 /* sidebar */
@@ -271,7 +278,7 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 .av.ring{box-shadow:0 0 0 2px rgba(255,30,45,.4)}
 
 /* main column */
-.main{min-width:0;padding:0 0 90px}
+.main{min-width:0;padding:0 0 90px;position:relative;z-index:1}
 .topbar{
   position:sticky;top:0;z-index:15;display:flex;align-items:center;gap:16px;
   padding:15px 32px;border-bottom:1px solid var(--line);
@@ -320,10 +327,35 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 /* staggered cascade — direct .panel/grid-card children of a freshly
    switched view fade up one after another instead of popping in as a block */
 .view.on > .stack > .panel,.view.on > .stack > .dash-grid > .stack > .panel,
-.view.on > .panel,.view.on > .grid-3 > *,.view.on > .grid-2 > *{
+.view.on > .panel,.view.on > .grid-3 > *,.view.on > .grid-2 > *,
+.view.on > div > .lfg-card,.view.on > div > .tour-card{
   animation:panelIn .5s cubic-bezier(.2,.85,.25,1) both;
 }
+.view.on > div > .lfg-card:nth-child(1),.view.on > div > .tour-card:nth-child(1){animation-delay:.04s}
+.view.on > div > .lfg-card:nth-child(2),.view.on > div > .tour-card:nth-child(2){animation-delay:.09s}
+.view.on > div > .lfg-card:nth-child(3),.view.on > div > .tour-card:nth-child(3){animation-delay:.14s}
+.view.on > div > .lfg-card:nth-child(4),.view.on > div > .tour-card:nth-child(4){animation-delay:.19s}
+.view.on > div > .lfg-card:nth-child(5),.view.on > div > .tour-card:nth-child(5){animation-delay:.24s}
+.view.on > div > .lfg-card:nth-child(6),.view.on > div > .tour-card:nth-child(6){animation-delay:.29s}
 @keyframes panelIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+/* per-page entrance signatures — each view arrives with its own motion
+   character so navigating feels like moving between rooms, not swapping
+   a div. All of these are overridden by the reduced-motion block below. */
+@keyframes panelRise3D{from{opacity:0;transform:perspective(1000px) rotateX(9deg) translateY(26px)}to{opacity:1;transform:perspective(1000px) rotateX(0) translateY(0)}}
+@keyframes panelSlideL{from{opacity:0;transform:translateX(-26px)}to{opacity:1;transform:translateX(0)}}
+@keyframes panelZoom{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+@keyframes panelFlip{from{opacity:0;transform:perspective(1000px) rotateY(-11deg) translateX(20px)}to{opacity:1;transform:perspective(1000px) rotateY(0) translateX(0)}}
+:root[data-view="dash"] .view.on > .stack > .panel,
+:root[data-view="dash"] .view.on > .stack > .dash-grid > .stack > .panel{animation-name:panelRise3D}
+:root[data-view="lfg"] .view.on > .panel,
+:root[data-view="lfg"] .view.on > div > .lfg-card{animation-name:panelSlideL}
+:root[data-view="missions"] .view.on > .grid-3 > *{animation-name:panelZoom}
+:root[data-view="hubs"] .view.on > .grid-3 > *{animation-name:panelFlip}
+:root[data-view="tours"] .view.on > div > .tour-card{animation-name:panelSlideL}
+:root[data-view="profile"] .view.on > .grid-2 > *{animation-name:panelRise3D}
+/* view-level header lift, runs on every page */
+.view.on .view-head{animation:panelRise3D .55s cubic-bezier(.2,.85,.25,1) both}
+.view.on .view-head .eyebrow{animation:panelZoom .5s .08s cubic-bezier(.2,.85,.25,1) both}
 .view.on > .stack > .panel:nth-child(1){animation-delay:.04s}
 .view.on > .stack > .panel:nth-child(2){animation-delay:.1s}
 .view.on > .stack > .panel:nth-child(3){animation-delay:.16s}
@@ -334,7 +366,9 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 .view.on > .grid-3 > *:nth-child(5){animation-delay:.24s}
 .view.on > .grid-3 > *:nth-child(6){animation-delay:.29s}
 @media (prefers-reduced-motion:reduce){
-  .view.on > .stack > .panel,.view.on > .panel,.view.on > .grid-3 > *,.view.on > .grid-2 > *{animation:none}
+  .view.on > .stack > .panel,.view.on > .panel,.view.on > .grid-3 > *,.view.on > .grid-2 > *,
+  .view.on > div > .lfg-card,.view.on > div > .tour-card,
+  .view.on .view-head,.view.on .view-head .eyebrow{animation:none !important}
 }
 .view-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:30px;flex-wrap:wrap}
 .view-head h2{font-size:clamp(30px,3.4vw,40px);font-weight:800;margin-top:12px;letter-spacing:-.025em;line-height:1.05}
@@ -430,8 +464,29 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 .dash-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:20px}
 .stack{display:flex;flex-direction:column;gap:20px}
 
-/* tilt cards */
-.tilt{transform-style:preserve-3d;transition:transform .12s ease;will-change:transform}
+/* ============ 3D CARD SYSTEM ============
+   Tilt targets keep their children on real 3D planes, so inner content
+   floats above the card face instead of shearing flat with it. */
+.tilt,.rec-card,.hub-card,.mission-card,.lf-box,.tour-card{
+  transform-style:preserve-3d;
+  transition:transform .35s cubic-bezier(.2,.8,.2,1),border-color .2s,box-shadow .25s;
+  will-change:transform;
+}
+/* inner layers ride at different depths on hover */
+.rec-card .rec-top,.rec-card .rec-tags,
+.mission-card .m-goal,.mission-card .m-foot,
+.hub-card .h-name,.hub-card .h-stat,
+.lf-box b,.lf-box svg{
+  transform:translateZ(0);transition:transform .35s cubic-bezier(.2,.8,.2,1);
+}
+.rec-card:hover .rec-top,.mission-card:hover .m-goal,
+.hub-card:hover .h-name,.lf-box:hover svg{transform:translateZ(34px)}
+.rec-card:hover .rec-tags,.mission-card:hover .m-foot,
+.hub-card:hover .h-stat,.lf-box:hover b{transform:translateZ(18px)}
+@media (prefers-reduced-motion:reduce){
+  .tilt,.rec-card,.hub-card,.mission-card,.lf-box,.tour-card{transform:none !important}
+  .rec-card *,.mission-card *,.hub-card *,.lf-box *{transform:none !important}
+}
 
 /* ============ DASHBOARD ============ */
 .hero-quest{

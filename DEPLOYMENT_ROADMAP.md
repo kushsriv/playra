@@ -8,6 +8,65 @@ or a live two-person test, not more code.)
 
 ---
 
+## Phase 2: Real-world readiness — SHIPPED
+
+Everything below is built, and the SQL was executed and behaviour-tested
+against a real PostgreSQL 16 instance (not just eyeballed).
+
+**Integrity (was the biggest hole)**
+- **XP/level is now server-owned.** `guard_profile_progression` rejects any
+  client write to `level`/`xp`/`xp_need`/`achievements`/`is_admin`/
+  `banned_until`; `award_xp()` is the only door, with a 500/award cap, a
+  5000/24h cap, and `event_key` idempotency so replays can't double-pay.
+  Previously anyone could set `level: 999` from devtools.
+- **Endorsements now require a shared squad.** `squad_sessions` /
+  `squad_members` record who actually played together, and a trigger rejects
+  endorsements between accounts with no shared session. The Gamer Card's
+  claim ("every badge was given by a real teammate") is now true.
+
+**Content that was fake and is now real**
+- **Missions** — real `missions` table with its own composer, rate limit
+  (3/min), moderation trigger, realtime feed and accept tracking.
+- **Tournaments** — real `tournaments` table. Creating one is admin-only,
+  because tournaments advertise prize money.
+
+**Safety**
+- **Blocking** — self-serve, filters the blocked account out of every feed.
+- **Bans have teeth** — `banned_until` is enforced in the RLS insert policies
+  for LFG and endorsements, and inside `award_xp`. Previously a "banned" user
+  could still post.
+- **Report queue** — `admin_report_queue()` gives admins every report with a
+  per-account report count, plus one-click 7-day ban / unban.
+
+**Operations & compliance**
+- **`purge_expired()`** on a daily pg_cron schedule — `lfg_posts` used to grow
+  forever. Degrades to a notice if pg_cron isn't available rather than rolling
+  back the script.
+- **`export_my_data()` / `delete_my_account()`** — DPDP-style access and
+  erasure, surfaced as buttons on the Gamer Card.
+- **`client_errors`** + `window.onerror`/`unhandledrejection` reporting, so a
+  broken production deploy is visible without waiting for a user to complain.
+
+### Appointing the first admin
+
+Admin is deliberately not settable from the client. In the Supabase SQL
+editor (which connects as `postgres`, a trusted role the guard lets through):
+
+```sql
+update public.profiles set is_admin = true
+ where id = (select id from auth.users where email = 'you@example.com');
+```
+
+### Still open
+
+- **Two-person live test** — still the single most valuable unverified thing.
+- Rank verification (Riot/Steam) and real moderation (Perspective API) both
+  need secrets, so they belong in a **Supabase Edge Function**, not the browser.
+- Tournament brackets — consider integrating start.gg rather than building.
+- No automated test suite in CI; the deploy workflow only deploys.
+
+---
+
 ## Phase −1: Shipped
 
 The app is **live** at GitHub Pages, deploying automatically on every push
