@@ -200,7 +200,11 @@ function unlockAch(id, nm){
 const VIEW_NAMES = {dash:'COMMAND CENTER', lfg:'LFG RADAR', missions:'MISSION MARKETPLACE', discover:'DISCOVER', hubs:'GAME HUBS', tours:'TOURNAMENT HUB', profile:'GAMER CARD'};
 function go(v){
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
-  $('view-'+v).classList.add('on');
+  const view = $('view-'+v);
+  // restart the entrance choreography even when re-entering the same view
+  view.classList.remove('on'); void view.offsetWidth; view.classList.add('on');
+  document.documentElement.dataset.view = v;
+  if(typeof VIEW_AMBIENT!=='undefined' && VIEW_AMBIENT[v]) ambientTune = VIEW_AMBIENT[v];
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===v));
   $('crumbName').textContent = VIEW_NAMES[v]; Sfx.open();
   window.scrollTo({top:0, behavior:'smooth'});
@@ -288,13 +292,96 @@ document.addEventListener('keydown', e=>{
   draw();
 })();
 
-/* ================= 3D TILT ================= */
+/* ================= AMBIENT BACKGROUND =================
+   A slow constellation of drifting nodes that link up when they get close
+   and lean toward the cursor. Each view sets its own hue via VIEW_AMBIENT
+   so moving between pages visibly re-tunes the room. Pointer tracking is
+   passive and the whole loop parks itself when the tab is hidden. */
+const VIEW_AMBIENT = {
+  dash:    {h:'255,30,45',  density:1.0, speed:1.0},
+  lfg:     {h:'255,30,45',  density:1.5, speed:1.7},
+  missions:{h:'255,255,255',density:0.8, speed:0.7},
+  discover:{h:'255,71,87',  density:1.1, speed:1.2},
+  hubs:    {h:'255,30,45',  density:1.2, speed:0.9},
+  tours:   {h:'255,180,60', density:0.9, speed:1.1},
+  profile: {h:'255,255,255',density:0.7, speed:0.6}
+};
+let ambientTune = VIEW_AMBIENT.dash;
+(function(){
+  const cv = $('ambientCanvas'); if(!cv) return;
+  const cx = cv.getContext('2d');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W=0,H=0,nodes=[],raf=null;
+  const mouse = {x:-9999,y:-9999};
+  const MAX_DENSITY = Math.max(...Object.values(VIEW_AMBIENT).map(v=>v.density));
+
+  function fit(){
+    const dpr = Math.min(devicePixelRatio||1, 2);
+    // measure the viewport, not the element — the canvas is fixed/inset:0 and
+    // is sized while #app is still display:none, where clientWidth reads 0
+    W = innerWidth; H = innerHeight;
+    cv.width = W*dpr; cv.height = H*dpr;
+    cx.setTransform(dpr,0,0,dpr,0,0);
+    // pool is sized for the busiest view so density can scale up to MAX_DENSITY
+    const base = Math.min(90, (W*H)/16000);
+    const target = Math.round(base*MAX_DENSITY);
+    nodes = Array.from({length:target}, ()=>({
+      x:Math.random()*W, y:Math.random()*H,
+      vx:(Math.random()-.5)*.22, vy:(Math.random()-.5)*.22,
+      r:Math.random()*1.6+.7
+    }));
+  }
+  addEventListener('resize', fit);
+  addEventListener('pointermove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; }, {passive:true});
+  addEventListener('pointerleave', ()=>{ mouse.x=mouse.y=-9999; });
+
+  function frame(){
+    const {h,density,speed} = ambientTune;
+    cx.clearRect(0,0,W,H);
+    const live = Math.min(nodes.length, Math.round(nodes.length*(density/MAX_DENSITY)));
+    for(let i=0;i<live;i++){
+      const p = nodes[i];
+      p.x += p.vx*speed; p.y += p.vy*speed;
+      if(p.x<0||p.x>W) p.vx*=-1;
+      if(p.y<0||p.y>H) p.vy*=-1;
+      // gentle attraction toward the pointer
+      const dx=mouse.x-p.x, dy=mouse.y-p.y, d2=dx*dx+dy*dy;
+      if(d2<40000){ const f=(1-Math.sqrt(d2)/200)*.35; p.x+=dx*.0012*f*60; p.y+=dy*.0012*f*60; }
+      cx.fillStyle=`rgba(${h},.7)`;
+      cx.beginPath(); cx.arc(p.x,p.y,p.r,0,7); cx.fill();
+      for(let j=i+1;j<live;j++){
+        const q=nodes[j], ax=p.x-q.x, ay=p.y-q.y, ad2=ax*ax+ay*ay;
+        if(ad2<15000){
+          cx.strokeStyle=`rgba(${h},${(1-ad2/15000)*.28})`;
+          cx.lineWidth=1; cx.beginPath(); cx.moveTo(p.x,p.y); cx.lineTo(q.x,q.y); cx.stroke();
+        }
+      }
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  function start(){ if(!raf && !reduce) raf=requestAnimationFrame(frame); }
+  function stop(){ if(raf){ cancelAnimationFrame(raf); raf=null; } }
+  document.addEventListener('visibilitychange', ()=> document.hidden ? stop() : start());
+  fit();
+  if(reduce){ // draw one static frame so the texture is still there
+    const {h}=ambientTune;
+    nodes.forEach(p=>{ cx.fillStyle=`rgba(${h},.35)`; cx.beginPath(); cx.arc(p.x,p.y,p.r,0,7); cx.fill(); });
+  } else start();
+})();
+
+/* ================= 3D TILT =================
+   Cards lean toward the cursor and their inner layers ride at different
+   depths, so the card reads as a stack of planes rather than a flat image. */
+const TILT_SEL = '.tilt,.rec-card,.hub-card,.mission-card,.lf-box,.tour-card';
 document.addEventListener('mousemove', e=>{
-  const c = e.target.closest('.tilt');
-  document.querySelectorAll('.tilt').forEach(t=>{ if(t!==c) t.style.transform=''; });
+  const c = e.target.closest(TILT_SEL);
+  document.querySelectorAll(TILT_SEL).forEach(t=>{
+    if(t!==c && t.style.transform) t.style.transform='';
+  });
   if(!c) return;
   const r=c.getBoundingClientRect(), x=(e.clientX-r.left)/r.width-.5, y=(e.clientY-r.top)/r.height-.5;
-  c.style.transform=`perspective(900px) rotateY(${x*4}deg) rotateX(${-y*4}deg)`;
+  const deg = c.classList.contains('tilt') ? 4 : 7;
+  c.style.transform=`perspective(900px) rotateY(${x*deg}deg) rotateX(${-y*deg}deg) translateZ(0)`;
 });
 
 /* ================= CURSOR SPOTLIGHT =================
