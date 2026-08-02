@@ -78,15 +78,15 @@ function loadState(){
 
 /* ================= DATA ================= */
 const GAMES = [
-  {n:'Valorant', ab:'VA', c:'#FF4655', glow:'rgba(255,70,85,.28)', online:'41.2K', tag:'TACTICAL FPS', art:''},
-  {n:'Minecraft', ab:'MC', c:'#5FBB4E', glow:'rgba(95,187,78,.26)', online:'38.9K', tag:'SANDBOX', art:''},
-  {n:'CS2', ab:'CS', c:'#F5A623', glow:'rgba(245,166,35,.26)', online:'29.4K', tag:'TACTICAL FPS', art:''},
-  {n:'Fortnite', ab:'FN', c:'#8B5CF6', glow:'rgba(139,92,246,.3)', online:'33.1K', tag:'BATTLE ROYALE', art:''},
-  {n:'League of Legends', ab:'LoL', c:'#00E5FF', glow:'rgba(0,229,255,.26)', online:'52.7K', tag:'MOBA', art:''},
-  {n:'Rocket League', ab:'RL', c:'#3DFFA0', glow:'rgba(61,255,160,.26)', online:'12.3K', tag:'SPORTS', art:''},
-  {n:'Apex Legends', ab:'AP', c:'#FF3D81', glow:'rgba(255,61,129,.28)', online:'18.8K', tag:'BATTLE ROYALE', art:''},
-  {n:'FIFA', ab:'FC', c:'#57F6FF', glow:'rgba(87,246,255,.26)', online:'9.6K', tag:'SPORTS', art:''},
-  {n:'Destiny 2', ab:'D2', c:'#FFB020', glow:'rgba(255,176,32,.26)', online:'7.2K', tag:'LOOTER', art:''}
+  {n:'Valorant', ab:'VA', c:'#FF4655', glow:'rgba(255,70,85,.28)', tag:'TACTICAL FPS', art:''},
+  {n:'Minecraft', ab:'MC', c:'#5FBB4E', glow:'rgba(95,187,78,.26)', tag:'SANDBOX', art:''},
+  {n:'CS2', ab:'CS', c:'#F5A623', glow:'rgba(245,166,35,.26)', tag:'TACTICAL FPS', art:''},
+  {n:'Fortnite', ab:'FN', c:'#8B5CF6', glow:'rgba(139,92,246,.3)', tag:'BATTLE ROYALE', art:''},
+  {n:'League of Legends', ab:'LoL', c:'#00E5FF', glow:'rgba(0,229,255,.26)', tag:'MOBA', art:''},
+  {n:'Rocket League', ab:'RL', c:'#3DFFA0', glow:'rgba(61,255,160,.26)', tag:'SPORTS', art:''},
+  {n:'Apex Legends', ab:'AP', c:'#FF3D81', glow:'rgba(255,61,129,.28)', tag:'BATTLE ROYALE', art:''},
+  {n:'FIFA', ab:'FC', c:'#57F6FF', glow:'rgba(87,246,255,.26)', tag:'SPORTS', art:''},
+  {n:'Destiny 2', ab:'D2', c:'#FFB020', glow:'rgba(255,176,32,.26)', tag:'LOOTER', art:''}
 ];
 /* Game tiles render from each title's own accent gradient rather than real
    key art. Publisher CDNs (Steam, Riot Data Dragon) were hot-linked here
@@ -272,6 +272,18 @@ document.addEventListener('keydown', e=>{
 (function(){
   const landingTune = { h:'255,30,45', density:1.25, speed:1.35 };
   Backend.track?.('landing_view', {});
+  /* Real counters. The three figures here were previously invented
+     ("128,402 OPERATORS ONLINE"). If the backend is unreachable or the
+     product genuinely has no activity yet, the block hides itself rather
+     than showing zeroes or a fabricated number. */
+  Backend.fetchPublicStats?.().then(st=>{
+    if(!st){ $('landingStats').style.display='none'; return; }
+    const total = (st.operators||0) + (st.live_posts||0) + (st.squads||0);
+    if(!total){ $('landingStats').style.display='none'; return; }
+    $('stOperators').textContent = Number(st.operators||0).toLocaleString();
+    $('stLive').textContent      = Number(st.live_posts||0).toLocaleString();
+    $('stSquads').textContent    = Number(st.squads||0).toLocaleString();
+  });
   const scene = createAmbient3D($('landingCanvas'), ()=>landingTune, {
     horizon: 0.42,          // lower horizon: more sky above the wordmark
     starScale: 7000,        // denser starfield
@@ -916,15 +928,33 @@ async function submitMission(){
 /* ================= GAME CAROUSEL ================= */
 let gcIdx=0, gcTimer=null;
 const gcReduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* Real population figures, keyed by game name. GAMES[].online used to carry
+   invented strings ("41.2K"); those were removed because a large number next
+   to an empty feed destroys trust faster than a small honest one. */
+let GAME_STATS = {};
+function statLine(g){
+  const st = GAME_STATS[g.n];
+  if(!st || (!st.players && !st.live)) return 'BE THE FIRST HERE';
+  const bits = [];
+  if(st.players) bits.push(`<b>${st.players}</b> ${st.players===1?'PLAYER':'PLAYERS'}`);
+  if(st.live) bits.push(`<b>${st.live}</b> LIVE`);
+  return bits.join(' · ');
+}
+async function refreshGameStats(){
+  if(!Backend.enabled) return;
+  GAME_STATS = await Backend.fetchGameStats();
+  renderCarousel(); renderHubs();
+}
+
 function renderCarousel(){
   const track=$('gcTrack'); track.innerHTML='';
   GAMES.forEach(g=>{
     const s=el(`<div class="gc-slide" style="--hub:${g.c};--hub-glow:${g.glow}">
       <div class="gc-abbr">${g.ab}</div>
       <div class="gc-info">
-        <div class="gc-tag">${g.tag}</div>
-        <div class="gc-name">${g.n}</div>
-        <div class="gc-stat"><b>${g.online}</b> PLAYERS ONLINE NOW</div>
+        <div class="gc-tag">${esc(g.tag)}</div>
+        <div class="gc-name">${esc(g.n)}</div>
+        <div class="gc-stat">${statLine(g)}</div>
         <button class="btn sm primary gc-enter">ENTER HUB →</button>
       </div></div>`);
     s.querySelector('.gc-enter').onclick=e=>{ e.stopPropagation(); selectHub(g); };
@@ -956,9 +986,13 @@ function renderHubs(){
   $('hubGrid').innerHTML='';
   GAMES.forEach(g=>{
     const c=el(`<div class="hub-card" style="--hub:${g.c};--hub-glow:${g.glow}">
-      <div class="h-abbr">${g.ab}</div>
-      <div class="h-name">${g.n}</div>
-      <div class="h-stat"><b>${g.online}</b> ONLINE · ${g.tag}</div></div>`);
+      <div class="h-mark" aria-hidden="true">${esc(g.ab)}</div>
+      <div class="h-abbr">${esc(g.ab)}</div>
+      <div class="h-body">
+        <div class="h-tag">${esc(g.tag)}</div>
+        <div class="h-name">${esc(g.n)}</div>
+        <div class="h-stat">${statLine(g)}</div>
+      </div></div>`);
     c.onclick=()=>selectHub(g);
     attachArt(c, g, 'hub-art');
     $('hubGrid').appendChild(c);
@@ -1473,7 +1507,7 @@ async function initApp(){
       }
       // social graph + real content, all in parallel — none of these block
       // each other and every one fails soft to an empty list
-      refreshBlocks(); refreshSquadmates();
+      refreshBlocks(); refreshSquadmates(); refreshGameStats();
       Backend.fetchMissions().then(ms=>{
         ms.forEach(m=>seenMissionIds.add(m.id));
         LIVE_MISSIONS = ms; renderMissions();

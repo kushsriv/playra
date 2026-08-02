@@ -1099,3 +1099,45 @@ as $$
   delete from public.xp_events where created_at < now() - interval '90 days' and event_key is null;
   delete from public.analytics_events where created_at < now() - interval '180 days';
 $$;
+
+-- ============ PUBLIC COUNTERS ============
+-- The UI previously shipped hardcoded population figures ("41.2K online",
+-- "128,402 operators"). Those were fabricated, which is both a trust problem
+-- for users -- a big number next to an empty feed reads as a lie -- and a
+-- disclosure problem for anyone diligencing the product. These two functions
+-- return the real thing. Aggregate only, no per-user data, so they are safe
+-- to expose to anonymous visitors on the landing page.
+create or replace function public.game_stats()
+returns table(game text, players int, live_posts int)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with g as (select unnest(games) as game from public.profiles where onboarded)
+  select g.game,
+         count(*)::int,
+         (select count(*)::int from public.lfg_posts l
+           where l.game = g.game and l.expires_at > now())
+    from g
+   group by g.game;
+$$;
+
+grant execute on function public.game_stats() to anon, authenticated;
+
+create or replace function public.public_stats()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'operators',  (select count(*) from public.profiles where onboarded),
+    'live_posts', (select count(*) from public.lfg_posts where expires_at > now()),
+    'missions',   (select count(*) from public.missions where status = 'open'),
+    'squads',     (select count(*) from public.squad_sessions)
+  );
+$$;
+
+grant execute on function public.public_stats() to anon, authenticated;

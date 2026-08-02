@@ -5,7 +5,10 @@ const { test, expect } = require('@playwright/test');
 
 async function enterApp(page, name = 'TestOp') {
   await page.goto('/index.html');
-  await page.waitForTimeout(1200);
+  // the enter button fades up on a 1.05s delay + 1.2s duration; clicking mid
+  // animation makes Playwright report the element as unstable
+  await page.locator('#enterBtn').waitFor({ state: 'visible' });
+  await page.waitForTimeout(2400);
   await page.click('#enterBtn');
   await page.waitForTimeout(700);
   for (let i = 0; i < 5; i++) {
@@ -38,7 +41,10 @@ test('landing renders and the 3D canvas paints', async ({ page }) => {
 
 test('age gate blocks onboarding until answered', async ({ page }) => {
   await page.goto('/index.html');
-  await page.waitForTimeout(1200);
+  // the enter button fades up on a 1.05s delay + 1.2s duration; clicking mid
+  // animation makes Playwright report the element as unstable
+  await page.locator('#enterBtn').waitFor({ state: 'visible' });
+  await page.waitForTimeout(2400);
   await page.click('#enterBtn');
   await page.waitForTimeout(700);
   await page.fill('#obName', 'Gated');
@@ -116,4 +122,22 @@ test('legal pages exist and are reachable', async ({ page }) => {
   await expect(page.locator('h1')).toContainText('Terms');
   await page.goto('/privacy.html');
   await expect(page.locator('h1')).toContainText('Privacy');
+});
+
+test('no fabricated population figures anywhere in the UI', async ({ page }) => {
+  test.setTimeout(60000);   // two full page loads plus onboarding
+  // These were shipped as hardcoded strings. Guard against them coming back:
+  // an invented number next to an empty feed is worse than a small real one.
+  const banned = ['128,402', '3,914', '41.2K', '38.9K', '29.4K', '52.7K', '33.1K',
+                  '18.8K', '12.3K', '9.6K', '7.2K', 'PLAYERS ONLINE NOW'];
+  await page.goto('/index.html');
+  await page.waitForTimeout(1500);
+  let body = await page.locator('body').innerText();
+  for (const b of banned) expect(body, `landing shows fabricated "${b}"`).not.toContain(b);
+
+  await enterApp(page);
+  await page.click('button.nav-btn[data-view="hubs"]');
+  await page.waitForTimeout(900);
+  body = await page.locator('body').innerText();
+  for (const b of banned) expect(body, `hubs shows fabricated "${b}"`).not.toContain(b);
 });
