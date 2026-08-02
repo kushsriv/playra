@@ -224,6 +224,29 @@ const Backend = (() => {
     }catch(e){ console.warn('[backend] registerTournament failed', e); return false; }
   }
 
+  /* ---- real population counters ----
+     Replaces the hardcoded figures the UI used to ship. Aggregate only, and
+     callable anonymously so the landing page can show true numbers before
+     sign-in. */
+  async function fetchGameStats(){
+    if(!enabled) return {};
+    try{
+      const { data, error } = await client.rpc('game_stats');
+      if(error) throw error;
+      const out = {};
+      (data||[]).forEach(r=>{ out[r.game] = { players:r.players, live:r.live_posts }; });
+      return out;
+    }catch(e){ console.warn('[backend] fetchGameStats failed', e); return {}; }
+  }
+  async function fetchPublicStats(){
+    if(!enabled) return null;
+    try{
+      const { data, error } = await client.rpc('public_stats');
+      if(error) throw error;
+      return data;
+    }catch(e){ console.warn('[backend] fetchPublicStats failed', e); return null; }
+  }
+
   /* ---- blocks ---- */
   async function fetchBlocks(){
     if(!enabled || !currentUser()) return new Set();
@@ -455,7 +478,13 @@ const Backend = (() => {
      that falls over under load. Each client joins one shard deterministically
      and the displayed count is scaled by the shard count — an estimate, but a
      cheap one that keeps working as the userbase grows. */
-  const PRESENCE_SHARDS = 8;
+  // Sharding is in place for when concurrency needs it, but the count stays
+  // at 1 for now: with a small userbase, extrapolating one shard's population
+  // to a whole-site estimate overstates it badly (one real user in one of
+  // eight shards would render as "8 online"), which is exactly the kind of
+  // invented figure the rest of this release removed. Raise this when real
+  // concurrency justifies it -- the hashing already handles the split.
+  const PRESENCE_SHARDS = 1;
   function shardFor(key){
     let h = 0;
     for(let i=0;i<key.length;i++) h = (h*31 + key.charCodeAt(i)) | 0;
@@ -468,9 +497,8 @@ const Backend = (() => {
     const shard = shardFor(key);
     presenceChannel = client.channel(`operators-online-${shard}`, { config: { presence: { key } } });
     presenceChannel.on('presence', { event: 'sync' }, () => {
-      const inShard = Object.keys(presenceChannel.presenceState()).length;
-      // scale the shard's population up to an estimate of the whole
-      onCountChange(Math.max(inShard, Math.round(inShard * PRESENCE_SHARDS)));
+      // report the true count, never an extrapolation
+      onCountChange(Object.keys(presenceChannel.presenceState()).length);
     });
     presenceChannel.subscribe(status => {
       if(status === 'SUBSCRIBED') presenceChannel.track({ name, online_at: new Date().toISOString() });
@@ -518,6 +546,7 @@ const Backend = (() => {
     joinSquadSession, fetchSquadmateIds,
     fetchMissions, insertMission, acceptMission, subscribeMissions,
     fetchTournaments, registerTournament, createTournament,
+    fetchGameStats, fetchPublicStats,
     fetchBlocks, blockUser, unblockUser,
     fetchReportQueue, banUser,
     exportMyData, deleteMyAccount, reportClientError,
