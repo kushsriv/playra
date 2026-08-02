@@ -30,6 +30,7 @@ const S = {
   goals:['Rank Push'], level:1, xp:0, xpNeed:100, quests:{}, achievements:new Set(['first']), onboarded:false,
   discord:'', discordVerified:false
 };
+const TERMS_VERSION = '2026-07-25';
 const XP_EVENTS = { join:40, ready:25, invite:20, quest:0, post:30, register:35, hub:10 };
 
 /* ================= PERSISTENCE ================= */
@@ -77,20 +78,24 @@ function loadState(){
 
 /* ================= DATA ================= */
 const GAMES = [
-  {n:'Valorant', ab:'VA', c:'#FF4655', glow:'rgba(255,70,85,.28)', online:'41.2K', tag:'TACTICAL FPS', art:'https://media.valorant-api.com/maps/7eaecc1b-4337-bbf6-6ab9-04b8f06b3319/splash.png'},
+  {n:'Valorant', ab:'VA', c:'#FF4655', glow:'rgba(255,70,85,.28)', online:'41.2K', tag:'TACTICAL FPS', art:''},
   {n:'Minecraft', ab:'MC', c:'#5FBB4E', glow:'rgba(95,187,78,.26)', online:'38.9K', tag:'SANDBOX', art:''},
-  {n:'CS2', ab:'CS', c:'#F5A623', glow:'rgba(245,166,35,.26)', online:'29.4K', tag:'TACTICAL FPS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/730/header.jpg'},
+  {n:'CS2', ab:'CS', c:'#F5A623', glow:'rgba(245,166,35,.26)', online:'29.4K', tag:'TACTICAL FPS', art:''},
   {n:'Fortnite', ab:'FN', c:'#8B5CF6', glow:'rgba(139,92,246,.3)', online:'33.1K', tag:'BATTLE ROYALE', art:''},
-  {n:'League of Legends', ab:'LoL', c:'#00E5FF', glow:'rgba(0,229,255,.26)', online:'52.7K', tag:'MOBA', art:'https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Jinx_0.jpg'},
-  {n:'Rocket League', ab:'RL', c:'#3DFFA0', glow:'rgba(61,255,160,.26)', online:'12.3K', tag:'SPORTS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/252950/header.jpg'},
-  {n:'Apex Legends', ab:'AP', c:'#FF3D81', glow:'rgba(255,61,129,.28)', online:'18.8K', tag:'BATTLE ROYALE', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/1172470/header.jpg'},
-  {n:'FIFA', ab:'FC', c:'#57F6FF', glow:'rgba(87,246,255,.26)', online:'9.6K', tag:'SPORTS', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/2195250/header.jpg'},
-  {n:'Destiny 2', ab:'D2', c:'#FFB020', glow:'rgba(255,176,32,.26)', online:'7.2K', tag:'LOOTER', art:'https://cdn.cloudflare.steamstatic.com/steam/apps/1085660/header.jpg'}
+  {n:'League of Legends', ab:'LoL', c:'#00E5FF', glow:'rgba(0,229,255,.26)', online:'52.7K', tag:'MOBA', art:''},
+  {n:'Rocket League', ab:'RL', c:'#3DFFA0', glow:'rgba(61,255,160,.26)', online:'12.3K', tag:'SPORTS', art:''},
+  {n:'Apex Legends', ab:'AP', c:'#FF3D81', glow:'rgba(255,61,129,.28)', online:'18.8K', tag:'BATTLE ROYALE', art:''},
+  {n:'FIFA', ab:'FC', c:'#57F6FF', glow:'rgba(87,246,255,.26)', online:'9.6K', tag:'SPORTS', art:''},
+  {n:'Destiny 2', ab:'D2', c:'#FFB020', glow:'rgba(255,176,32,.26)', online:'7.2K', tag:'LOOTER', art:''}
 ];
-/* art is hot-linked from publisher-operated CDNs (Steam app art, Riot's
-   Data Dragon, public game APIs) rather than committed to the repo.
-   Renderers treat it as progressive enhancement — on any load failure the
-   <img> is removed and the tile falls back to its accent-gradient look. */
+/* Game tiles render from each title's own accent gradient rather than real
+   key art. Publisher CDNs (Steam, Riot Data Dragon) were hot-linked here
+   previously; that was dropped deliberately. Hotlinking those assets is
+   against their terms, the art is licensed to the publisher rather than to
+   us, and every tile leaked a viewer's IP address to a third party before
+   they had agreed to anything. Shipping our own generated art removes an
+   IP liability, a privacy disclosure and an external dependency at once.
+   attachArt stays so licensed art can be dropped in later by setting `art`. */
 function attachArt(container, g, cls){
   if(!g.art) return;
   const img = document.createElement('img');
@@ -229,7 +234,14 @@ function go(v){
   view.classList.remove('on'); void view.offsetWidth; view.classList.add('on');
   document.documentElement.dataset.view = v;
   if(typeof VIEW_AMBIENT!=='undefined' && VIEW_AMBIENT[v]) ambientTune = VIEW_AMBIENT[v];
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===v));
+  document.querySelectorAll('.nav-btn').forEach(b=>{
+    const on = b.dataset.view===v;
+    b.classList.toggle('active', on);
+    // aria-current is how assistive tech knows which view you are on;
+    // the .active class alone conveys nothing to a screen reader
+    if(on) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
+  });
+  Backend.track?.('view_changed', {view:v});
   $('crumbName').textContent = VIEW_NAMES[v]; Sfx.open();
   window.scrollTo({top:0, behavior:'smooth'});
 }
@@ -259,6 +271,7 @@ document.addEventListener('keydown', e=>{
    competing with it. Stops itself once the landing is dismissed. */
 (function(){
   const landingTune = { h:'255,30,45', density:1.25, speed:1.35 };
+  Backend.track?.('landing_view', {});
   const scene = createAmbient3D($('landingCanvas'), ()=>landingTune, {
     horizon: 0.42,          // lower horizon: more sky above the wordmark
     starScale: 7000,        // denser starfield
@@ -511,6 +524,55 @@ document.addEventListener('pointermove', e=>{
   c.style.setProperty('--mx', `${((e.clientX-r.left)/r.width*100).toFixed(1)}%`);
   c.style.setProperty('--my', `${((e.clientY-r.top)/r.height*100).toFixed(1)}%`);
 });
+
+/* ================= METRICS DASHBOARD (admins) =================
+   The numbers an investor or acquirer asks for first: active users,
+   activation funnel, and content volume. Admin-gated server-side by
+   admin_metrics(), so the hidden button is convenience, not security. */
+const METRIC_LABELS = {
+  total_accounts:'Total accounts', onboarded:'Completed onboarding',
+  dau:'Daily active', wau:'Weekly active', mau:'Monthly active',
+  lfg_posts:'LFG posts', missions:'Missions posted',
+  squads_formed:'Squads formed', endorsements:'Endorsements given',
+  open_reports:'Open reports'
+};
+const FUNNEL_ORDER = [
+  ['landing_view','Landed'], ['signin_started','Started sign-in'],
+  ['onboard_age_confirmed','Confirmed age'], ['onboard_completed','Completed profile'],
+  ['lfg_posted','Posted LFG'], ['squad_joined','Joined a squad']
+];
+async function openMetrics(){
+  openOv('metricsOv');
+  $('metricsBody').innerHTML = '<div class="empty"><div class="e-ico">📡</div><b>Loading metrics…</b></div>';
+  const m = await Backend.fetchMetrics(30);
+  if(!m){
+    $('metricsBody').innerHTML = '<div class="empty"><div class="e-ico">🔒</div><b>Admin only</b>This account cannot read metrics.</div>';
+    return;
+  }
+  const tiles = Object.entries(METRIC_LABELS).map(([k,label])=>`
+    <div class="rec-card" style="padding:14px">
+      <div style="font-family:var(--font-display);font-size:26px;font-weight:800;color:#fff;line-height:1">${Number(m[k]||0).toLocaleString()}</div>
+      <div style="font-size:11px;color:var(--red);letter-spacing:.08em;text-transform:uppercase;margin-top:4px">${esc(label)}</div>
+    </div>`).join('');
+  const f = m.funnel || {};
+  const top = FUNNEL_ORDER[0] && f[FUNNEL_ORDER[0][0]] ? f[FUNNEL_ORDER[0][0]] : 0;
+  const funnel = FUNNEL_ORDER.map(([key,label])=>{
+    const n = f[key] || 0;
+    const pct = top ? Math.round(n/top*100) : 0;
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px">
+        <span style="color:var(--ink-dim)">${esc(label)}</span>
+        <span class="mono" style="color:#fff">${n} <span style="color:var(--ink-mute)">· ${pct}%</span></span>
+      </div>
+      <div style="height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden">
+        <i style="display:block;height:100%;width:${pct}%;background:var(--grad-red);border-radius:99px"></i>
+      </div></div>`;
+  }).join('');
+  $('metricsBody').innerHTML = `
+    <div class="grid-3" style="gap:12px;margin-bottom:24px">${tiles}</div>
+    <h3 style="font-size:15px;font-weight:800;margin:0 0 14px">Activation funnel · last ${m.window_days} days</h3>
+    ${funnel}`;
+}
 
 /* ================= MODERATION QUEUE (admins) =================
    The button is hidden for non-admins, but that is only cosmetic: both
@@ -843,6 +905,7 @@ async function submitMission(){
     }
     $('mpGoal').value=''; $('mpDesc').value='';
     closeOv('missionOv');
+    Backend.track?.('mission_posted', {game:missionGameSel, difficulty:missionDiffSel});
     toast('🛰️','Mission posted', goal.slice(0,40).toUpperCase());
     addXP(XP_EVENTS.post, 'Posted a mission');
   } finally {
@@ -981,6 +1044,7 @@ function renderTours(){
     c.querySelector('.btn').onclick=async ()=>{
       if(t.id && !await Backend.registerTournament(t.id))
         return toast('⚠️','Could not register','TRY AGAIN IN A MOMENT');
+      Backend.track?.('tournament_registered', {game:t.game});
       toast('🏆','Registered', esc(t.name).toUpperCase());
       addXP(XP_EVENTS.register, `Registered: ${t.name}`, t.id?`tour:${t.id}`:'tour_'+t.name);
       unlockAch('squad','Squad Leader');
@@ -1015,6 +1079,7 @@ function openEndorsePicker(targetId, targetName){
     const c=el(`<button class="chip">${esc(trait)}</button>`);
     c.onclick=async ()=>{
       const ok = await Backend.insertEndorsement(targetId, trait);
+      if(ok) Backend.track?.('endorsement_given', {trait});
       if(ok){ toast('🤝','Endorsement sent',`${trait.toUpperCase()} — GIVEN TO ${targetName.toUpperCase()}`); completeQuest('q2'); closeOv('endorseOv'); }
       else toast('⚠️','Could not send','TRY AGAIN IN A MOMENT');
     };
@@ -1143,7 +1208,8 @@ function openRoom(p){
     ? `${p.game} · live room. Everyone presses READY, then Discord handles unlock so the squad can connect.`
     : `${p.game} · voice channel armed. Everyone presses READY, then the room hands off to the game lobby.`;
   $('readyBtn').disabled=false; $('readyBtn').textContent='PRESS READY';
-  openOv('roomOv'); addXP(XP_EVENTS.join,'Joined squad room'); completeQuest('q1');
+  openOv('roomOv'); Backend.track?.('squad_joined', {game:p.game, live:roomIsLive});
+  addXP(XP_EVENTS.join,'Joined squad room'); completeQuest('q1');
   if(roomIsLive){
     $('roomMembers').innerHTML='<div class="rm waiting"><div class="av">📡</div><div class="rm-n">Connecting…</div><div class="rm-s">LINKING ROOM</div></div>';
     Backend.joinRoom(p.id, {name:S.name, avatar:S.avatar, discord:S.discord||''}, renderRoomMembers);
@@ -1209,12 +1275,43 @@ $('postSend').onclick=async ()=>{
     toast('⚠️','Broadcast failed','COULD NOT REACH THE SERVER — POSTED LOCALLY INSTEAD');
   }
   addLfgPost({game:postGameSel,title:goal,tags:['Posted by you','Mic required',postExpSel+' window'],slots:5,filled:1,mins,expiresAt:Date.now()+mins*60000});
+  Backend.track?.('lfg_posted', {game:postGameSel, window:postExpSel});
   addXP(XP_EVENTS.post,'Broadcast LFG');
 };
 
 /* ================= OVERLAYS ================= */
-function openOv(id){ $(id).classList.add('on'); Sfx.open(); }
-function closeOv(id){ $(id).classList.remove('on'); }
+/* ================= MODAL FOCUS MANAGEMENT =================
+   A dialog you can Tab out of is a real accessibility failure: keyboard and
+   screen-reader users end up interacting with the page behind the overlay
+   with no way to tell. These keep focus inside the open dialog and return it
+   to whatever opened it on close. */
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])';
+let lastFocused = null;
+function trapFocus(e){
+  const ov = document.querySelector('.overlay.on');
+  if(!ov || e.key !== 'Tab') return;
+  const items = [...ov.querySelectorAll(FOCUSABLE)].filter(n=>n.offsetParent !== null);
+  if(!items.length) return;
+  const first = items[0], last = items[items.length-1];
+  if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+}
+document.addEventListener('keydown', trapFocus);
+
+function openOv(id){
+  lastFocused = document.activeElement;
+  const ov = $(id);
+  ov.classList.add('on'); Sfx.open();
+  // move focus into the dialog so the next Tab stays inside it
+  const target = ov.querySelector(FOCUSABLE);
+  if(target) setTimeout(()=>target.focus(), 60);
+}
+function closeOv(id){
+  $(id).classList.remove('on');
+  // hand focus back to whatever opened this, so keyboard users don't get
+  // dumped at the top of the document
+  if(lastFocused && document.contains(lastFocused)){ lastFocused.focus(); lastFocused = null; }
+}
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{ if(e.target===o && o.id!=='onboardOv') o.classList.remove('on'); }));
 
 /* ================= ONBOARDING ================= */
@@ -1248,6 +1345,14 @@ function onboardOpen(edit=false){
     d.onclick=()=>{S.avatar=a;onboardOpen(edit);};
     $('avPick').appendChild(d);
   });
+  // age assurance: a self-declared bracket, mirrored by a server-side trigger
+  // that refuses under_13 outright, so deleting this UI does not get you in
+  $('agePick').innerHTML='';
+  [['13_17','13–17'],['18_plus','18 or older']].forEach(([val,label])=>{
+    const c=el(`<button class="chip ${S.ageBracket===val?'sel':''}" role="radio" aria-checked="${S.ageBracket===val}">${label}</button>`);
+    c.onclick=()=>{ S.ageBracket=val; onboardOpen(edit); };
+    $('agePick').appendChild(c);
+  });
   pickCloud('gamePick',OB.games,S.games,4);
   pickCloud('langPick',OB.langs,S.langs,3);
   pickCloud('stylePick',OB.styles,S.styles,4);
@@ -1268,9 +1373,13 @@ $('obNext').onclick=()=>{
       S.name=n;
     }
     if(!S.discordVerified) S.discord = $('obDiscord').value.trim().replace(/^@/,'').slice(0,37);
+    if(!S.ageBracket){ toast('⚠️','Confirm your age','REQUIRED BEFORE YOU CAN CONTINUE'); return; }
+    S.termsVersion = TERMS_VERSION;
+    Backend.track?.('onboard_age_confirmed', {bracket:S.ageBracket});
   }
   if(OB.step<3){ OB.step++; obShow(); return; }
   S.onboarded = true;
+  Backend.track?.('onboard_completed', {games:S.games.length, goals:S.goals.length});
   closeOv('onboardOv'); renderProfile(); renderRecs();
   toast('🪪','Gamer Card deployed',`WELCOME, ${S.name.toUpperCase()} — MATCHMAKING ENGINE CALIBRATED`);
   unlockAch('first','First Link');
@@ -1306,7 +1415,7 @@ $('enterBtn').onclick=()=>{
 };
 
 /* ================= AUTH / BACKEND ================= */
-$('discordBtn').onclick=()=>Backend.signInWithDiscord();
+$('discordBtn').onclick=()=>{ Backend.track?.('signin_started',{}); Backend.signInWithDiscord(); };
 async function doSignOut(){
   await Backend.signOut();
   try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
@@ -1324,6 +1433,7 @@ function applyProfileRow(row){
   S.styles=row.styles||[]; S.goals=row.goals||[]; S.level=row.level; S.xp=row.xp; S.xpNeed=row.xp_need;
   S.quests=row.quests||{}; S.achievements=new Set(row.achievements&&row.achievements.length?row.achievements:['first']);
   S.onboarded=!!row.onboarded; S.discord=row.discord_handle||''; moodIdx = row.mood_idx||0;
+  S.ageBracket=row.age_bracket||''; S.termsVersion=row.terms_version||'';
 }
 
 /* ================= AMBIENT SIM =================
@@ -1358,6 +1468,7 @@ async function initApp(){
       $('dataRights').style.display='block';
       if(row && row.is_admin){
         $('modBtn').style.display='inline-flex';
+        $('metricsBtn').style.display='inline-flex';
         $('newTourBtn').style.display='inline-flex';
       }
       // social graph + real content, all in parallel — none of these block

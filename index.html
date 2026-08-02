@@ -14,10 +14,11 @@
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+<a class="skip-link" href="#mainContent">Skip to main content</a>
 
 <!-- ================= LANDING ================= -->
-<section id="landing">
-  <canvas id="landingCanvas"></canvas>
+<section id="landing" role="region" aria-label="Welcome to PLAYRA">
+  <canvas id="landingCanvas" aria-hidden="true"></canvas>
   <div class="city back" data-parallax="12"></div>
   <div class="city front" data-parallax="26"></div>
   <div class="scan"></div>
@@ -56,6 +57,10 @@
         <b>Instant Matching</b><span>Compatibility scoring on schedule, comms style, and goals.</span>
       </div>
     </div>
+    <footer class="landing-legal">
+      <a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · 13+ only
+      <span>Game names and trademarks are the property of their respective owners. PLAYRA is not affiliated with or endorsed by any publisher.</span>
+    </footer>
   </div>
 </section>
 
@@ -63,9 +68,9 @@
 <div id="app">
   <canvas id="ambientCanvas" aria-hidden="true"></canvas>
   <!-- sidebar -->
-  <aside class="side">
+  <aside class="side" role="navigation" aria-label="Primary">
     <div class="logo"><span class="dot"></span>PLAY<span class="lk">RA</span></div>
-    <button class="nav-btn active" data-view="dash">
+    <button class="nav-btn active" data-view="dash" aria-current="page">
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg>
       <span class="txt">Command Center</span>
     </button>
@@ -101,16 +106,16 @@
   </aside>
 
   <!-- main -->
-  <div class="main">
-    <div class="topbar">
+  <div class="main" id="mainContent" role="main" tabindex="-1">
+    <div class="topbar" role="banner">
       <div class="crumb">PLAYRA // <b id="crumbName">COMMAND CENTER</b></div>
       <div class="xpwrap">
         <div class="lbl"><span class="lvl">LVL <span id="lvlNum">1</span></span><span><span id="xpNow">0</span> / <span id="xpNeed">100</span> XP</span></div>
         <div class="xpbar"><i id="xpFill"></i></div>
       </div>
       <span class="badge live-badge" id="presenceBadge" style="display:none">🟢 <span id="presenceCount">1</span> LIVE</span>
-      <button class="mood" id="moodBtn"><span class="md-dot" id="moodDot"></span><span id="moodTxt">Grinding</span></button>
-      <button class="icon-btn" id="soundBtn" title="Toggle sound">
+      <button class="mood" id="moodBtn" aria-label="Change your status"><span class="md-dot" id="moodDot"></span><span id="moodTxt">Grinding</span></button>
+      <button class="icon-btn" id="soundBtn" title="Toggle sound" aria-label="Toggle sound effects" aria-pressed="true">
         <svg id="soundOnIco" viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>
       </button>
       <button class="btn sm signout-btn" id="topSignOutBtn" title="Sign out" style="display:none">SIGN OUT</button>
@@ -130,7 +135,7 @@
             </div>
           </div>
           <div class="radar-wrap" style="flex:none">
-            <canvas id="radar" width="440" height="440"></canvas>
+            <canvas id="radar" width="440" height="440" role="img" aria-label="Radar showing nearby squads matching your goals"></canvas>
           </div>
         </div>
 
@@ -248,7 +253,8 @@
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="onboardOpen(true)">EDIT CARD</button>
-          <button class="btn hot sm" id="modBtn" style="display:none" onclick="openModQueue()">REPORT QUEUE</button>
+          <button class="btn hot sm" id="metricsBtn" style="display:none" onclick="openMetrics()">METRICS</button>
+        <button class="btn hot sm" id="modBtn" style="display:none" onclick="openModQueue()">REPORT QUEUE</button>
           <button class="btn ghost sm" id="signOutBtn" style="display:none">SIGN OUT</button>
         </div>
       </div>
@@ -294,7 +300,7 @@
 </div>
 
 <!-- ============ ONBOARDING MODAL ============ -->
-<div class="overlay" id="onboardOv">
+<div class="overlay" role="dialog" aria-modal="true" id="onboardOv">
   <div class="panel modal">
     <div class="eyebrow" style="margin-bottom:14px">IDENTITY FORGE</div>
     <h2>Build your Gamer Card</h2>
@@ -308,7 +314,10 @@
       <input class="f-input" id="obDiscord" maxlength="37" placeholder="e.g. nightraven" autocomplete="off">
       <label class="f-label">Avatar core</label>
       <div class="av-pick" id="avPick"></div>
-      <p class="privacy-note">🔒 Your callsign and games are visible to everyone. Your Discord handle is only ever shown to squadmates who ready up with you in the same room — never posted publicly.</p>
+      <label class="f-label" id="ageLabel">Your age</label>
+      <div class="chip-cloud" id="agePick" role="radiogroup" aria-labelledby="ageLabel"></div>
+      <p class="privacy-note">🔒 Your callsign and games are visible to everyone. Your Discord handle is only ever shown to squadmates who ready up with you in the same room — never posted publicly.
+      By continuing you agree to our <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>. PLAYRA is not available to under-13s.</p>
     </div>
 
     <div id="obStep2" style="display:none">
@@ -333,7 +342,7 @@
 </div>
 
 <!-- ============ SQUAD ROOM MODAL ============ -->
-<div class="overlay" id="roomOv">
+<div class="overlay" role="dialog" aria-modal="true" id="roomOv">
   <div class="panel modal" style="--accent:var(--lime)">
     <div class="eyebrow" style="--accent:var(--lime);margin-bottom:14px">TEMPORARY SQUAD ROOM</div>
     <h2 id="roomTitle">Squad Room</h2>
@@ -349,7 +358,7 @@
 </div>
 
 <!-- ============ POST MODAL ============ -->
-<div class="overlay" id="postOv">
+<div class="overlay" role="dialog" aria-modal="true" id="postOv">
   <div class="panel modal">
     <div class="eyebrow" style="margin-bottom:14px">BROADCAST</div>
     <h2>Post a mission</h2>
@@ -368,7 +377,7 @@
 </div>
 
 <!-- ============ MISSION COMPOSER ============ -->
-<div class="overlay" id="missionOv">
+<div class="overlay" role="dialog" aria-modal="true" id="missionOv">
   <div class="panel modal">
     <div class="eyebrow" style="margin-bottom:14px">MISSION MARKETPLACE</div>
     <h2>Post a mission</h2>
@@ -389,7 +398,7 @@
 </div>
 
 <!-- ============ TOURNAMENT COMPOSER (admins only) ============ -->
-<div class="overlay" id="tourOv">
+<div class="overlay" role="dialog" aria-modal="true" id="tourOv">
   <div class="panel modal">
     <div class="eyebrow" style="margin-bottom:14px">ORGANISER</div>
     <h2>Publish a tournament</h2>
@@ -411,8 +420,21 @@
   </div>
 </div>
 
+<!-- ============ METRICS DASHBOARD (admins only) ============ -->
+<div class="overlay" role="dialog" aria-modal="true" id="metricsOv">
+  <div class="panel modal" style="max-width:760px">
+    <div class="eyebrow" style="margin-bottom:14px">ANALYTICS</div>
+    <h2>Product metrics</h2>
+    <p class="m-sub">Live numbers from your own database — no third-party analytics, so nothing about your users leaves your project.</p>
+    <div id="metricsBody"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeOv('metricsOv')">CLOSE</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODERATION QUEUE (admins only) ============ -->
-<div class="overlay" id="modOv">
+<div class="overlay" role="dialog" aria-modal="true" id="modOv">
   <div class="panel modal" style="max-width:820px">
     <div class="eyebrow" style="margin-bottom:14px">MODERATION</div>
     <h2>Report queue</h2>
@@ -425,7 +447,7 @@
 </div>
 
 <!-- ============ ENDORSE MODAL ============ -->
-<div class="overlay" id="endorseOv">
+<div class="overlay" role="dialog" aria-modal="true" id="endorseOv">
   <div class="panel modal" style="max-width:420px">
     <div class="eyebrow" style="margin-bottom:14px">GIVE CREDIT</div>
     <h2>Endorse <span id="endorseTarget">Operator</span></h2>
@@ -438,7 +460,7 @@
 </div>
 
 <!-- ============ REPORT MODAL ============ -->
-<div class="overlay" id="reportOv">
+<div class="overlay" role="dialog" aria-modal="true" id="reportOv">
   <div class="panel modal" style="max-width:420px;--accent:var(--danger)">
     <div class="eyebrow" style="margin-bottom:14px;--accent:var(--danger);color:var(--danger)">FLAG A PROBLEM</div>
     <h2>Report <span id="reportTarget">Operator</span></h2>
@@ -450,7 +472,7 @@
   </div>
 </div>
 
-<div id="toasts"></div>
+<div id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 <div id="lvlFlash"><div class="lf" id="lvlTxt">LEVEL UP</div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

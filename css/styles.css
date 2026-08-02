@@ -920,3 +920,35 @@ h1,h2,h3,h4{font-family:var(--font-display);letter-spacing:-.015em;font-weight:7
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
 }
+
+/* ============ ACCESSIBILITY ============ */
+/* Keyboard users land here first and can jump the entire nav rail. Visually
+   hidden until focused, which is the only way it stays useful without
+   intruding on the design. */
+.skip-link{
+  position:fixed;top:-100px;left:12px;z-index:999;
+  background:var(--red);color:#0A0A0A;font-weight:800;font-size:13px;
+  padding:12px 20px;border-radius:0 0 10px 10px;
+  transition:top .18s ease;
+}
+.skip-link:focus{top:0}
+/* Screen-reader-only utility: present to assistive tech, invisible on screen.
+   Uses the clip-path technique so the text is still selectable by AT rather
+   than being display:none, which would hide it from screen readers too. */
+.sr-only{
+  position:absolute !important;width:1px;height:1px;
+  padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;
+}
+/* The default focus ring is cyan-era; make it high-contrast against the
+   near-black surfaces and never remove it. */
+:focus-visible{outline:3px solid #FFFFFF;outline-offset:2px;border-radius:6px}
+.btn:focus-visible,.chip:focus-visible,.nav-btn:focus-visible{outline:3px solid #FFFFFF;outline-offset:3px}
+/* legal footer — required disclosure, deliberately quiet */
+.landing-legal{
+  margin-top:44px;font-size:12px;color:var(--ink-mute);
+  animation:fadeUp 1.2s 1.6s both;
+}
+.landing-legal a{color:var(--ink-dim);text-decoration:underline;text-underline-offset:3px}
+.landing-legal a:hover{color:#fff}
+.landing-legal span{display:block;margin-top:10px;font-size:11px;color:#6E6E6E;max-width:620px;margin-left:auto;margin-right:auto;line-height:1.5}

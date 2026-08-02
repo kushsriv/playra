@@ -70,6 +70,9 @@ const Backend = (() => {
         langs: state.langs, styles: state.styles, goals: state.goals,
         quests: state.quests, mood_idx: state.moodIdx || 0,
         onboarded: !!state.onboarded, discord_handle: state.discord || '',
+        age_bracket: state.ageBracket || null,
+        terms_version: state.termsVersion || '',
+        terms_accepted_at: state.termsVersion ? new Date().toISOString() : null,
         updated_at: new Date().toISOString()
       });
       if(error) throw error;
@@ -446,18 +449,63 @@ const Backend = (() => {
     if(roomChannel){ try{ roomChannel.unsubscribe(); }catch(e){} roomChannel=null; roomSelf=null; }
   }
 
+  /* Presence is sharded across PRESENCE_SHARDS channels rather than putting
+     every account in one. A single channel makes the whole userbase share one
+     connection's fan-out and one presence payload, which is the first thing
+     that falls over under load. Each client joins one shard deterministically
+     and the displayed count is scaled by the shard count — an estimate, but a
+     cheap one that keeps working as the userbase grows. */
+  const PRESENCE_SHARDS = 8;
+  function shardFor(key){
+    let h = 0;
+    for(let i=0;i<key.length;i++) h = (h*31 + key.charCodeAt(i)) | 0;
+    return Math.abs(h) % PRESENCE_SHARDS;
+  }
   function joinPresence(name, onCountChange){
     if(!enabled) return;
     const user = currentUser();
     const key = user ? user.id : `guest-${Math.random().toString(36).slice(2)}`;
-    presenceChannel = client.channel('operators-online', { config: { presence: { key } } });
+    const shard = shardFor(key);
+    presenceChannel = client.channel(`operators-online-${shard}`, { config: { presence: { key } } });
     presenceChannel.on('presence', { event: 'sync' }, () => {
-      const state = presenceChannel.presenceState();
-      onCountChange(Object.keys(state).length);
+      const inShard = Object.keys(presenceChannel.presenceState()).length;
+      // scale the shard's population up to an estimate of the whole
+      onCountChange(Math.max(inShard, Math.round(inShard * PRESENCE_SHARDS)));
     });
     presenceChannel.subscribe(status => {
       if(status === 'SUBSCRIBED') presenceChannel.track({ name, online_at: new Date().toISOString() });
     });
+  }
+
+  /* ---- product analytics ----
+     Fire-and-forget, never throws, never blocks a user action. Events go to
+     the project's own Postgres, so nothing is shared with a third party and
+     there is no processor agreement to negotiate in diligence. */
+  const sessionId = (()=>{
+    try{
+      let s = sessionStorage.getItem('playra_sid');
+      if(!s){ s = Math.random().toString(36).slice(2) + Date.now().toString(36); sessionStorage.setItem('playra_sid', s); }
+      return s;
+    }catch(e){ return 'nostore'; }
+  })();
+  function track(event, props){
+    if(!enabled) return;
+    try{
+      client.from('analytics_events').insert({
+        user_id: currentUser()?.id || null,
+        session_id: sessionId,
+        event: String(event).slice(0,60),
+        props: props || {}
+      }).then(()=>{}, ()=>{});
+    }catch(e){ /* telemetry must never break the app */ }
+  }
+  async function fetchMetrics(days){
+    if(!enabled || !currentUser()) return null;
+    try{
+      const { data, error } = await client.rpc('admin_metrics', { days: days || 30 });
+      if(error) throw error;
+      return data;
+    }catch(e){ return null; }   // non-admins get FORBIDDEN
   }
 
   return {
@@ -472,6 +520,7 @@ const Backend = (() => {
     fetchTournaments, registerTournament, createTournament,
     fetchBlocks, blockUser, unblockUser,
     fetchReportQueue, banUser,
-    exportMyData, deleteMyAccount, reportClientError
+    exportMyData, deleteMyAccount, reportClientError,
+    track, fetchMetrics
   };
 })();

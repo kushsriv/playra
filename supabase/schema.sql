@@ -958,3 +958,144 @@ begin
 exception when duplicate_object then
   null;
 end $$;
+
+-- ============================================================================
+-- ============ PHASE 3: COMMERCIAL READINESS ================================
+-- Analytics, consent and age assurance. These exist because an acquirer or
+-- investor cannot diligence engagement that was never measured, and cannot
+-- accept a consumer product with no record of what users agreed to.
+-- ============================================================================
+
+-- ============ PRODUCT ANALYTICS ============
+-- Append-only event stream. Deliberately NOT a third-party SDK: no data
+-- leaves the user's own Supabase project, which keeps the privacy story
+-- simple and means there is no processor agreement to negotiate later.
+create table if not exists public.analytics_events (
+  id bigserial primary key,
+  user_id uuid references public.profiles(id) on delete set null,
+  session_id text not null default '',
+  event text not null,
+  props jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists analytics_event_time_idx on public.analytics_events (event, created_at desc);
+create index if not exists analytics_user_time_idx  on public.analytics_events (user_id, created_at desc);
+
+alter table public.analytics_events enable row level security;
+
+-- insert-only for everyone (anonymous funnel steps happen before sign-in),
+-- readable by admins only
+drop policy if exists "anyone can emit analytics" on public.analytics_events;
+create policy "anyone can emit analytics"
+  on public.analytics_events for insert with check (true);
+
+drop policy if exists "admins can read analytics" on public.analytics_events;
+create policy "admins can read analytics"
+  on public.analytics_events for select using (public.is_admin(auth.uid()));
+
+-- clamp payloads at the database edge so a malformed or hostile client
+-- cannot bloat the table
+create or replace function public.trim_analytics()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.event := left(new.event, 60);
+  new.session_id := left(new.session_id, 40);
+  if pg_column_size(new.props) > 2000 then new.props := '{"_":"oversized"}'::jsonb; end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists analytics_trim on public.analytics_events;
+create trigger analytics_trim
+  before insert on public.analytics_events
+  for each row execute function public.trim_analytics();
+
+-- The numbers an acquirer asks for on day one: active users, retention and
+-- the activation funnel. Admin-gated inside the function body.
+create or replace function public.admin_metrics(days int default 30)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  since timestamptz := now() - make_interval(days => greatest(1, least(365, days)));
+begin
+  if not public.is_admin(auth.uid()) then
+    raise exception 'FORBIDDEN: admin only';
+  end if;
+  return jsonb_build_object(
+    'window_days', days,
+    'total_accounts',   (select count(*) from public.profiles),
+    'onboarded',        (select count(*) from public.profiles where onboarded),
+    'dau',              (select count(distinct user_id) from public.analytics_events
+                          where created_at > now() - interval '1 day' and user_id is not null),
+    'wau',              (select count(distinct user_id) from public.analytics_events
+                          where created_at > now() - interval '7 days' and user_id is not null),
+    'mau',              (select count(distinct user_id) from public.analytics_events
+                          where created_at > since and user_id is not null),
+    'lfg_posts',        (select count(*) from public.lfg_posts where created_at > since),
+    'missions',         (select count(*) from public.missions where created_at > since),
+    'squads_formed',    (select count(*) from public.squad_sessions where created_at > since),
+    'endorsements',     (select count(*) from public.endorsements where created_at > since),
+    'open_reports',     (select count(*) from public.reports),
+    'funnel',           (select jsonb_object_agg(event, n) from (
+                            select event, count(distinct coalesce(user_id::text, session_id)) as n
+                              from public.analytics_events
+                             where created_at > since
+                               and event in ('landing_view','signin_started','onboard_started',
+                                             'onboard_completed','lfg_posted','squad_joined')
+                             group by event) f),
+    'top_events',       (select jsonb_object_agg(event, n) from (
+                            select event, count(*) as n from public.analytics_events
+                             where created_at > since group by event order by n desc limit 15) t)
+  );
+end;
+$$;
+
+revoke all on function public.admin_metrics(int) from public;
+grant execute on function public.admin_metrics(int) to authenticated;
+
+-- ============ AGE ASSURANCE & CONSENT ============
+-- PLAYRA is a social product for gamers, which means minors will sign up.
+-- Recording an explicit self-declared age bracket plus the terms version
+-- accepted is the minimum defensible position under COPPA/DPDP.
+alter table public.profiles add column if not exists age_bracket text
+  check (age_bracket is null or age_bracket in ('under_13','13_17','18_plus'));
+alter table public.profiles add column if not exists terms_version text not null default '';
+alter table public.profiles add column if not exists terms_accepted_at timestamptz;
+
+-- Under-13 accounts are not permitted; enforced server-side so removing the
+-- client-side gate is not enough to get in.
+create or replace function public.enforce_age_gate()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.age_bracket = 'under_13' then
+    raise exception 'AGE_GATE: PLAYRA is not available to users under 13';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profile_age_gate on public.profiles;
+create trigger profile_age_gate
+  before insert or update on public.profiles
+  for each row execute function public.enforce_age_gate();
+
+-- keep analytics from growing without bound, alongside the other purges
+create or replace function public.purge_expired()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.lfg_posts where expires_at < now() - interval '1 day';
+  delete from public.client_errors where created_at < now() - interval '30 days';
+  delete from public.xp_events where created_at < now() - interval '90 days' and event_key is null;
+  delete from public.analytics_events where created_at < now() - interval '180 days';
+$$;
