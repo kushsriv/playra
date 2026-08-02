@@ -1,0 +1,12 @@
+{
+  "name": "playra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mission-based gaming network — find teammates by intent.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0"
+  }
+}

@@ -4,3 +4,8 @@ node_modules/
 # Filled in locally with real Supabase keys for dev — never commit this.
 # Production deploys inject real values via GitHub Actions secrets instead.
 js/config.js
+
+# test output
+node_modules/
+test-results/
+playwright-report/

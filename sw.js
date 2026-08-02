@@ -1,5 +1,5 @@
-const CACHE = 'playra-v12';
-const SHELL = ['./', './index.html', './css/styles.css', './js/config.js', './js/backend.js', './js/app.js', './manifest.json', './icon.svg'];
+const CACHE = 'playra-v13';
+const SHELL = ['./', './index.html', './css/styles.css', './js/config.js', './js/backend.js', './js/app.js', './manifest.json', './icon.svg', './terms.html', './privacy.html', './legal.css'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));

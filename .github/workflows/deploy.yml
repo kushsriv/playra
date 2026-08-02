@@ -22,7 +22,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Gate: production only gets a build that passed the suite.
+  test:
+    uses: ./.github/workflows/test.yml
+
   deploy:
+    needs: test
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
